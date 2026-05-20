@@ -146,11 +146,6 @@ public class OIDCDebugExecutor extends DebugExecutor {
         return OIDCDebugConstants.DEBUG_EXECUTOR_NAME;
     }
 
-    @Override
-    public void cleanup() {
-
-        // No OIDC-specific resources to release; DebugSessionStore entries expire automatically.
-    }
 
     private void validateRequiredParams(String clientId,
             String authzEndpoint, String redirectUri) throws DebugExecutionException {

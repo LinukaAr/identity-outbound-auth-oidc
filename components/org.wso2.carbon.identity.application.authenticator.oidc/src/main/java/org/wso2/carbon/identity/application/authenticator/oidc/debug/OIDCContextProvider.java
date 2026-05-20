@@ -192,20 +192,6 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
     }
 
     /**
-     * Validates if this resolver can potentially handle the given IdP ID.
-     * Performs format validation only — does not make database calls or verify that the IdP has an OIDC
-     * authenticator configured. Full validation occurs in {@link #resolveContext(String, String)}.
-     *
-     * @param idpId Identity Provider ID to check.
-     * @return true if idpId is non-empty and contains only safe characters, false otherwise.
-     */
-    @Override
-    public boolean canHandle(String idpId) {
-
-        return StringUtils.isNotEmpty(idpId) && SAFE_ID_PATTERN.matcher(idpId).matches();
-    }
-
-    /**
      * Finds the OIDC authenticator configuration in the IdP.
      * If authenticatorName is provided, finds the specific authenticator.
      * Otherwise, returns the first enabled OIDC authenticator found via known implementations or suffix matching.
