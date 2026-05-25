@@ -265,11 +265,6 @@ public class OAuth2TokenClient {
                 details.append("The IdP rejected the request. Check that client credentials are correct ")
                     .append("and the authenticator type matches the IdP's requirements.");
                 break;
-            case "CONFIG_MISSING":
-                details.append("Required OAuth 2.0 configuration is missing. Verify that Client ID, ")
-                    .append("Client Secret, and Token Endpoint URL are all configured in the IdP ")
-                    .append("authenticator settings.");
-                break;
             case "CONNECTION_ERROR":
                 details.append("Cannot connect to the IdP token endpoint. Verify the token endpoint URL ")
                     .append("is correct and the IdP server is reachable.");

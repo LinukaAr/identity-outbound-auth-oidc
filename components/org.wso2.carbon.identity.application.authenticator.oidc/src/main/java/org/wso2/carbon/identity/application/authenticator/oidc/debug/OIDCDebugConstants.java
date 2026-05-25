@@ -20,6 +20,10 @@ package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 
 import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  * Constants for the OIDC debug extension.
  */
@@ -28,8 +32,8 @@ public final class OIDCDebugConstants {
     private OIDCDebugConstants() {
     }
 
-    // Protocol type identifier.
-    public static final String PROTOCOL_TYPE = "OIDC";
+    // IDP type identifier.
+    public static final String IDP_TYPE = "OIDC";
 
     // Debug component names.
     public static final String DEBUG_EXECUTOR_NAME = "OIDCDebugExecutor";
@@ -40,7 +44,6 @@ public final class OIDCDebugConstants {
     public static final String CLIENT_SECRET = "clientSecret";
     public static final String AUTHORIZATION_ENDPOINT = "authorizationEndpoint";
     public static final String TOKEN_ENDPOINT = "tokenEndpoint";
-    public static final String REDIRECT_URI = "redirectUri";
     public static final String IDP_SCOPE = "idpScope";
     public static final String IDP_CONFIG = "idpConfig";
     public static final String DEBUG_IDP_NAME = "debugIdpName";
@@ -58,6 +61,7 @@ public final class OIDCDebugConstants {
 
     // OIDC PKCE parameters.
     public static final String PKCE_METHOD_S256 = "S256";
+    public static final String CODE_CHALLENGE_METHOD_PARAM = "code_challenge_method";
     public static final String SHA256_ALGORITHM = "SHA-256";
 
     // Error codes.
@@ -78,8 +82,6 @@ public final class OIDCDebugConstants {
     public static final String STATUS_PARTIAL = "partial";
     public static final String STATUS_FAILED = "failed";
     public static final String STATUS_PENDING = "pending";
-    public static final String STATUS_PRESENT = "present";
-    public static final String STATUS_ABSENT = "absent";
     public static final String STATUS_FOUND = "found";
 
     // Debug context/session property keys.
@@ -111,6 +113,26 @@ public final class OIDCDebugConstants {
     public static final String CONTEXT_ACCOUNT_LINKING_STATUS = "accountLinkingStatus";
     public static final String CONTEXT_ACCOUNT_LINKING_MESSAGE = "CONTEXT_ACCOUNT_LINKING_MESSAGE";
     public static final String ACCOUNT_LINKING_REASON = "reason";
+    public static final String DIAG_FEDERATED_ATTRIBUTE = "federatedAttribute";
+
+    // Diagnostic detail keys stripped from the sanitized output.
+    public static final String DIAG_IDP_NAME = "idpName";
+
+    /**
+     * Internal diagnostic detail keys that must be dropped before the diagnostics are exposed in
+     * the API response (e.g. they carry deployment configuration, not user-facing debug info).
+     */
+    public static final Set<String> DIAGNOSTIC_INTERNAL_DETAIL_KEYS;
+
+    static {
+        Set<String> internalKeys = new HashSet<>();
+        internalKeys.add(DIAG_IDP_NAME);
+        internalKeys.add(TOKEN_ENDPOINT);
+        DIAGNOSTIC_INTERNAL_DETAIL_KEYS = Collections.unmodifiableSet(internalKeys);
+    }
+
+    // OIDC structured-claim prefix used when flattening the "address" claim.
+    public static final String CLAIM_ADDRESS_PREFIX = "address.";
 
     // Claim status values.
     public static final String CLAIM_STATUS_SUCCESSFUL = "Successful";
@@ -136,7 +158,6 @@ public final class OIDCDebugConstants {
 
     // Request parameter names.
     public static final String PARAM_IDP_ID = "idpId";
-    public static final String PARAM_AUTHENTICATOR = "authenticator";
     public static final String PARAM_CONNECTION_ID = "connectionId";
 
     // Authenticator property names.

@@ -18,44 +18,44 @@
 
 package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 
+import org.wso2.carbon.identity.debug.framework.extension.DebugTypeProvider;
 import org.wso2.carbon.identity.debug.idp.core.IdpDebugConstants;
 import org.wso2.carbon.identity.debug.framework.core.DebugContextProvider;
 import org.wso2.carbon.identity.debug.framework.core.DebugExecutor;
 import org.wso2.carbon.identity.debug.framework.core.DebugProcessor;
 import org.wso2.carbon.identity.debug.idp.core.IdpDebugProcessor;
 import org.wso2.carbon.identity.debug.framework.extension.DebugCallbackHandler;
-import org.wso2.carbon.identity.debug.framework.extension.DebugProtocolProvider;
 
 /**
- * OIDC implementation of DebugProtocolProvider.
+ * OIDC implementation of DebugTypeProvider.
  */
-public class OIDCDebugProtocolProvider implements DebugProtocolProvider {
+public class OIDCDebugTypeProvider implements DebugTypeProvider {
 
     private final DebugContextProvider contextProvider;
     private final DebugExecutor executor;
     private final IdpDebugProcessor processor;
     private final DebugCallbackHandler callbackHandler;
 
-    public OIDCDebugProtocolProvider() {
+    public OIDCDebugTypeProvider() {
 
         this(new OIDCContextProvider(), new OIDCDebugExecutor(), new OIDCDebugProcessor());
     }
 
-    public OIDCDebugProtocolProvider(DebugContextProvider contextProvider, DebugExecutor executor,
-            IdpDebugProcessor processor) {
+    public OIDCDebugTypeProvider(DebugContextProvider contextProvider, DebugExecutor executor,
+                                 IdpDebugProcessor processor) {
 
         this.contextProvider = contextProvider;
         this.executor = executor;
         this.processor = processor;
         this.callbackHandler = new OIDCDebugCallbackHandler(processor,
-                OIDCDebugConstants.PROTOCOL_TYPE, IdpDebugConstants.PROTOCOL_TYPE_GOOGLE,
-                IdpDebugConstants.PROTOCOL_TYPE_GITHUB);
+                OIDCDebugConstants.IDP_TYPE, IdpDebugConstants.IDP_TYPE_GOOGLE,
+                IdpDebugConstants.IDP_TYPE_GITHUB);
     }
 
     @Override
     public String getProtocolType() {
 
-        return OIDCDebugConstants.PROTOCOL_TYPE;
+        return OIDCDebugConstants.IDP_TYPE;
     }
 
     @Override
@@ -70,7 +70,6 @@ public class OIDCDebugProtocolProvider implements DebugProtocolProvider {
         return executor;
     }
 
-    @Override
     public DebugProcessor getProcessor() {
 
         return processor;

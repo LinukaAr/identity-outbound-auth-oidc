@@ -21,27 +21,25 @@ package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.carbon.identity.application.authenticator.oidc.OIDCAuthenticatorConstants;
 import org.wso2.carbon.identity.application.authenticator.oidc.OpenIDConnectExecutor;
-import org.wso2.carbon.identity.application.authenticator.oidc.debug.util.OIDCConfigurationExtractor;
 import org.wso2.carbon.identity.application.common.model.FederatedAuthenticatorConfig;
 import org.wso2.carbon.identity.application.common.model.IdentityProvider;
 import org.wso2.carbon.identity.application.common.model.Property;
-import org.wso2.carbon.identity.debug.idp.core.IdpDebugContextProvider;
+import org.wso2.carbon.identity.application.common.util.IdentityApplicationConstants;
+import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants;
+import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants.ErrorMessages;
 import org.wso2.carbon.identity.debug.framework.exception.ContextResolutionException;
 import org.wso2.carbon.identity.debug.framework.model.DebugContext;
 import org.wso2.carbon.identity.debug.idp.core.IdpDebugConstants;
-import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
-import org.wso2.carbon.idp.mgt.IdentityProviderManager;
-import org.wso2.carbon.idp.mgt.IdentityProviderManagementException;
+import org.wso2.carbon.identity.debug.idp.core.IdpDebugContextProvider;
 
+import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Pattern;
-
-import javax.servlet.http.HttpServletRequest;
 
 /**
  * OIDC context resolver for debug operations.
@@ -50,152 +48,40 @@ import javax.servlet.http.HttpServletRequest;
 public class OIDCContextProvider extends IdpDebugContextProvider {
 
     private static final Log LOG = LogFactory.getLog(OIDCContextProvider.class);
-    private static final Pattern SAFE_ID_PATTERN = Pattern.compile("[a-zA-Z0-9._-]+");
     private static final OpenIDConnectExecutor OIDC_EXECUTOR = new OpenIDConnectExecutor();
 
-    /**
-     * Resolves and creates an OIDC debug context from the given HTTP request.
-     *
-     * @param request HTTP servlet request containing debug parameters (idpId, authenticator).
-     * @return DebugContext containing resolved OIDC debug context data.
-     * @throws ContextResolutionException If context resolution fails.
-     */
-    public DebugContext resolveContext(HttpServletRequest request) throws ContextResolutionException {
-
-        try {
-            if (request == null) {
-                throw new ContextResolutionException("HTTP request is null");
-            }
-
-            String idpId = request.getParameter(OIDCDebugConstants.PARAM_IDP_ID);
-            String authenticatorName = request.getParameter(OIDCDebugConstants.PARAM_AUTHENTICATOR);
-
-            if (StringUtils.isEmpty(idpId)) {
-                throw new ContextResolutionException("IdP ID parameter is missing");
-            }
-
-            // Allow only alphanumeric, hyphens, underscores, and dots to prevent injection.
-            if (!SAFE_ID_PATTERN.matcher(idpId).matches()) {
-                throw new ContextResolutionException("Invalid IdP ID format - contains invalid characters");
-            }
-
-            if (StringUtils.isNotEmpty(authenticatorName) &&
-                    !SAFE_ID_PATTERN.matcher(authenticatorName).matches()) {
-                throw new ContextResolutionException("Invalid authenticator name format - contains invalid characters");
-            }
-
-            return resolveContext(idpId, authenticatorName);
-        } catch (ContextResolutionException e) {
-            throw e;
-        } catch (Exception e) {
-            LOG.error("Unexpected error resolving OIDC debug context from request: " + e.getMessage(), e);
-            throw new ContextResolutionException("CTX-50001", "Error resolving OIDC debug context",
-                    e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Resolves and creates an OIDC debug context with specific parameters.
-     *
-     * @param idpId         Identity Provider resource ID or name.
-     * @param authenticator Optional authenticator name (defaults to first enabled OIDC authenticator).
-     * @return DebugContext containing resolved OIDC debug context data.
-     * @throws ContextResolutionException If context resolution fails.
-     */
     @Override
-    public DebugContext resolveContext(String idpId, String authenticator) throws ContextResolutionException {
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Resolving OIDC debug context for IdP: " + idpId + " with authenticator: " + authenticator);
-        }
-
-        if (StringUtils.isEmpty(idpId)) {
-            throw new ContextResolutionException("IdP ID is null or empty");
-        }
-
-        Map<String, Object> contextMap = new HashMap<>();
-        try {
-            String tenantDomain = IdentityTenantUtil.resolveTenantDomain();
-            if (StringUtils.isEmpty(tenantDomain)) {
-                throw new ContextResolutionException("CTX-50002",
-                        "Unable to resolve tenant domain for OIDC debug context",
-                        "Tenant domain is not available in the current execution context.");
-            }
-            IdentityProvider idp = retrieveIdentityProvider(idpId, tenantDomain);
-            validateIdpIsEnabled(idp);
-
-            contextMap.put(OIDCDebugConstants.DEBUG_IDP_NAME, idp.getIdentityProviderName());
-            contextMap.put(OIDCDebugConstants.DEBUG_IDP_RESOURCE_ID,
-                    StringUtils.defaultIfEmpty(idp.getResourceId(), idp.getIdentityProviderName()));
-
-            FederatedAuthenticatorConfig authenticatorConfig = findOIDCAuthenticatorConfig(idp, authenticator);
-            if (authenticatorConfig == null) {
-                throw new ContextResolutionException("No OIDC authenticator configuration found for IdP: " +
-                        idp.getIdentityProviderName());
-            }
-
-            extractOIDCParameters(authenticatorConfig, contextMap);
-
-            contextMap.put(OIDCDebugConstants.DEBUG_ID, "debug-" + UUID.randomUUID());
-            contextMap.put(OIDCDebugConstants.CONTEXT_PROTOCOL, OIDCDebugConstants.PROTOCOL_TYPE);
-
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("OIDC debug context resolved successfully for IdP: " + idp.getIdentityProviderName());
-            }
-
-            return DebugContext.buildFromMap(contextMap);
-
-        } catch (ContextResolutionException e) {
-            LOG.error("Error resolving OIDC debug context: " + e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOG.error("Unexpected error resolving OIDC debug context: " + e.getMessage(), e);
-            throw new ContextResolutionException("CTX-50001", "Error resolving OIDC debug context",
-                    e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Retrieves the IdP by resource ID first (UUID lookup), falling back to name lookup if not found.
-     * Both strategies are attempted because callers may pass either a resource ID or an IdP name.
-     */
-    private IdentityProvider retrieveIdentityProvider(String idpId, String tenantDomain)
+    public DebugContext resolveContext(String idpId, String authenticator, IdentityProvider preloadedIdp)
             throws ContextResolutionException {
 
-        try {
-            IdentityProviderManager idpManager = IdentityProviderManager.getInstance();
-            IdentityProvider idp = idpManager.getIdPByResourceId(idpId, tenantDomain, true);
-            if (idp == null) {
-                idp = idpManager.getIdPByName(idpId, tenantDomain, true);
-            }
-            if (idp == null) {
-                throw new ContextResolutionException("CTX-40401", "IdP not found: " + idpId,
-                        "Identity Provider with ID or name '" + idpId + "' does not exist.");
-            }
-            return idp;
-        } catch (ContextResolutionException e) {
-            throw e;
-        } catch (IdentityProviderManagementException e) {
-            throw new ContextResolutionException("CTX-50001",
-                    "Failed to retrieve IdP: " + idpId, e.getMessage(), e);
-        } catch (Exception e) {
-            throw new ContextResolutionException("CTX-50001",
-                    "Unexpected error retrieving IdP: " + idpId, e.getMessage(), e);
+        validateIdpIsEnabled(preloadedIdp);
+
+        Map<String, Object> contextMap = new HashMap<>();
+        contextMap.put(OIDCDebugConstants.DEBUG_IDP_RESOURCE_ID,
+                StringUtils.defaultIfEmpty(preloadedIdp.getResourceId(), preloadedIdp.getIdentityProviderName()));
+
+        FederatedAuthenticatorConfig authenticatorConfig = findOIDCAuthenticatorConfig(preloadedIdp, authenticator);
+        if (authenticatorConfig == null) {
+            throw contextError("No OIDC authenticator configuration found for IdP: "
+                    + preloadedIdp.getIdentityProviderName());
         }
+
+        extractOIDCConfigs(authenticatorConfig, contextMap);
+
+        contextMap.put(OIDCDebugConstants.DEBUG_ID,
+                DebugFrameworkConstants.DEBUG_PREFIX + UUID.randomUUID());
+        contextMap.put(OIDCDebugConstants.CONTEXT_PROTOCOL, OIDCDebugConstants.IDP_TYPE);
+
+        return DebugContext.buildFromMap(contextMap);
     }
 
     private void validateIdpIsEnabled(IdentityProvider idp) throws ContextResolutionException {
 
         if (!idp.isEnable()) {
-            throw new ContextResolutionException("IdP is not available: " + idp.getIdentityProviderName());
+            throw contextError("IdP is not available: " + idp.getIdentityProviderName());
         }
     }
 
-    /**
-     * Finds the OIDC authenticator configuration in the IdP.
-     * If authenticatorName is provided, finds the specific authenticator.
-     * Otherwise, returns the first enabled OIDC authenticator found via known implementations or suffix matching.
-     */
     private FederatedAuthenticatorConfig findOIDCAuthenticatorConfig(IdentityProvider idp,
             String authenticatorName) {
 
@@ -204,6 +90,7 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
             return null;
         }
 
+        // 1. Exact match on the requested authenticator name.
         if (StringUtils.isNotEmpty(authenticatorName)) {
             for (FederatedAuthenticatorConfig config : configs) {
                 if (config != null && config.isEnabled() && authenticatorName.equals(config.getName())) {
@@ -212,22 +99,20 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
             }
         }
 
+        // 2. Any enabled config that looks like an OIDC authenticator (known impl or *OIDCAuthenticator).
         for (FederatedAuthenticatorConfig config : configs) {
-            if (config != null && config.isEnabled() && isKnownOidcImplementation(config.getName())) {
+            if (config != null && config.isEnabled() && isOidcAuthenticator(config.getName())) {
                 return config;
             }
         }
 
-        for (FederatedAuthenticatorConfig config : configs) {
-            if (config != null && config.isEnabled()) {
-                String configName = config.getName();
-                if (StringUtils.isNotEmpty(configName) && configName.endsWith("OIDCAuthenticator")) {
-                    return config;
-                }
-            }
-        }
-
         return null;
+    }
+
+    private boolean isOidcAuthenticator(String implementationName) {
+
+        return isKnownOidcImplementation(implementationName)
+                || (StringUtils.isNotEmpty(implementationName) && implementationName.endsWith("OIDCAuthenticator"));
     }
 
     private boolean isKnownOidcImplementation(String implementationName) {
@@ -237,39 +122,33 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
                 || IdpDebugConstants.IMPLEMENTATION_GITHUB.equals(implementationName);
     }
 
-    /**
-     * Extracts OIDC parameters from the authenticator configuration and stores them in context.
-     *
-     * @param config  Authenticator configuration.
-     * @param context Map to store extracted parameters.
-     * @throws ContextResolutionException If required parameters are missing.
-     */
-    private void extractOIDCParameters(FederatedAuthenticatorConfig config, Map<String, Object> context)
+    private void extractOIDCConfigs(FederatedAuthenticatorConfig config, Map<String, Object> context)
             throws ContextResolutionException {
 
         Property[] properties = config.getProperties();
         if (properties == null || properties.length == 0) {
-            throw new ContextResolutionException("No properties found in authenticator configuration");
+            throw contextError("No properties found in authenticator configuration");
         }
 
-        Map<String, String> propertyMap = OIDCConfigurationExtractor.buildPropertyMap(properties);
+        Map<String, String> propertyMap = new HashMap<>();
+        for (Property prop : properties) {
+            if (prop != null && prop.getName() != null && prop.getValue() != null) {
+                propertyMap.put(prop.getName(), prop.getValue());
+            }
+        }
         OpenIDConnectExecutor executor = resolveExecutor(config.getName());
 
-        String clientId = OIDCConfigurationExtractor.findPropertyValue(
-                propertyMap, OIDCConfigurationExtractor.getClientIdPropertyNames());
+        String clientId = propertyMap.get(OIDCAuthenticatorConstants.CLIENT_ID);
         if (StringUtils.isEmpty(clientId)) {
-            throw new ContextResolutionException("Client ID not found in authenticator configuration");
+            throw contextError("Client ID not found in authenticator configuration");
         }
         context.put(OIDCDebugConstants.CLIENT_ID, clientId);
 
-        context.put(OIDCDebugConstants.AUTHORIZATION_ENDPOINT,
-                resolveEndpoint(executor, propertyMap, true));
-        context.put(OIDCDebugConstants.TOKEN_ENDPOINT,
-                resolveEndpoint(executor, propertyMap, false));
+        context.put(OIDCDebugConstants.AUTHORIZATION_ENDPOINT, resolveEndpoint(executor, propertyMap, true));
+        context.put(OIDCDebugConstants.TOKEN_ENDPOINT, resolveEndpoint(executor, propertyMap, false));
         context.put(OIDCDebugConstants.IDP_SCOPE, resolveScope(propertyMap, executor));
 
-        String clientSecret = OIDCConfigurationExtractor.findPropertyValue(
-                propertyMap, OIDCConfigurationExtractor.getClientSecretPropertyNames());
+        String clientSecret = propertyMap.get(OIDCAuthenticatorConstants.CLIENT_SECRET);
         if (StringUtils.isNotEmpty(clientSecret)) {
             context.put(OIDCDebugConstants.CLIENT_SECRET, clientSecret);
         }
@@ -277,26 +156,21 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
 
     private OpenIDConnectExecutor resolveExecutor(String authenticatorName) {
 
-        if (isKnownOidcImplementation(authenticatorName)) {
-            return OIDC_EXECUTOR;
-        }
-        return null;
+        return isKnownOidcImplementation(authenticatorName) ? OIDC_EXECUTOR : null;
     }
 
-    /**
-     * Resolves authorization or token endpoint: executor takes priority (handles IdP-specific overrides like Google),
-     * falling back to raw property lookup if the executor returns nothing.
-     */
     private String resolveEndpoint(OpenIDConnectExecutor executor, Map<String, String> propertyMap,
             boolean isAuthorizationEndpoint) throws ContextResolutionException {
 
         String endpoint = null;
         if (executor != null) {
+            // Endpoint resolution from the executor is best-effort: it may throw RuntimeException
+            // for malformed config. Fall back to direct property lookup below.
             try {
                 endpoint = isAuthorizationEndpoint
                         ? executor.getAuthorizationServerEndpoint(propertyMap)
                         : executor.getTokenEndpoint(propertyMap);
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Failed to get endpoint from executor: " + e.getMessage());
                 }
@@ -304,27 +178,21 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         }
 
         if (StringUtils.isEmpty(endpoint)) {
-            endpoint = OIDCConfigurationExtractor.findPropertyValue(propertyMap,
-                    isAuthorizationEndpoint
-                            ? OIDCConfigurationExtractor.getAuthorizationEndpointPropertyNames()
-                            : OIDCConfigurationExtractor.getTokenEndpointPropertyNames());
+            endpoint = isAuthorizationEndpoint
+                    ? propertyMap.get(OIDCAuthenticatorConstants.OAUTH2_AUTHZ_URL)
+                    : propertyMap.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
         }
 
         if (StringUtils.isEmpty(endpoint)) {
-            throw new ContextResolutionException((isAuthorizationEndpoint ? "Authorization" : "Token") +
-                    " endpoint not found in authenticator configuration");
+            throw contextError((isAuthorizationEndpoint ? "Authorization" : "Token")
+                    + " endpoint not found in authenticator configuration");
         }
         return endpoint;
     }
 
-    /**
-     * Extracts scope from authenticator properties using multiple fallback strategies.
-     * Falls back to "openid" if no scope is configured anywhere.
-     */
     private String resolveScope(Map<String, String> propertyMap, OpenIDConnectExecutor executor) {
 
-        String scope = OIDCConfigurationExtractor.findPropertyValue(
-                propertyMap, OIDCConfigurationExtractor.getScopePropertyNames());
+        String scope = propertyMap.get(IdentityApplicationConstants.Authenticator.OIDC.SCOPES);
         if (StringUtils.isNotEmpty(scope)) {
             return scope;
         }
@@ -347,46 +215,27 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         return OIDCDebugConstants.DEFAULT_SCOPE;
     }
 
-    /**
-     * Extracts the scope value from an AdditionalQueryParameters string.
-     * Handles formats: {@code scope=openid+email+profile}, {@code scope=openid%20email},
-     * and the non-standard {@code scope=openid&email&profile} (bare values after scope= treated as scope tokens).
-     */
     private String extractScopeFromQueryParams(String queryParams) {
 
-        String[] params = queryParams.split("&");
-        int scopeIndex = -1;
-        for (int i = 0; i < params.length; i++) {
-            if (params[i].trim().startsWith("scope=")) {
-                scopeIndex = i;
-                break;
+        for (String param : queryParams.split("&")) {
+            if (!param.trim().startsWith("scope=")) {
+                continue;
+            }
+            try {
+                return URLDecoder.decode(param.substring("scope=".length()), StandardCharsets.UTF_8.name());
+            } catch (UnsupportedEncodingException e) {
+                // unreachable — UTF-8 is always supported on the JVM.
+                return null;
             }
         }
+        return null;
+    }
 
-        if (scopeIndex == -1) {
-            return null;
-        }
+    private ContextResolutionException contextError(String description) {
 
-        String scopeValue;
-        try {
-            scopeValue = URLDecoder.decode(params[scopeIndex].substring("scope=".length()),
-                    StandardCharsets.UTF_8.name());
-        } catch (java.io.UnsupportedEncodingException e) {
-            // UTF-8 is always supported — unreachable.
-            scopeValue = params[scopeIndex].substring("scope=".length());
-        }
-        StringBuilder scopeBuilder = new StringBuilder(scopeValue);
-
-        // Collect subsequent bare parameters (no '=') as additional scope values.
-        for (int j = scopeIndex + 1; j < params.length; j++) {
-            String nextParam = params[j].trim();
-            if (!nextParam.contains("=")) {
-                scopeBuilder.append(" ").append(nextParam);
-            } else {
-                break;
-            }
-        }
-
-        return scopeBuilder.toString().trim();
+        return new ContextResolutionException(
+                ErrorMessages.ERROR_CODE_CONTEXT_RESOLUTION_FAILED.getCode(),
+                ErrorMessages.ERROR_CODE_CONTEXT_RESOLUTION_FAILED.getMessage(),
+                description);
     }
 }
