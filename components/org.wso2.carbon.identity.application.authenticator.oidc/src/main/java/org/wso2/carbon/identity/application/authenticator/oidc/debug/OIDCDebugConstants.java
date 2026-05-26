@@ -65,7 +65,6 @@ public final class OIDCDebugConstants {
     public static final String OIDC_ERROR_DESCRIPTION_PARAM = "error_description";
 
     // OIDC response token fields.
-    public static final String ACCESS_TOKEN = "accessToken";
     public static final String TOKEN_TYPE = "tokenType";
     public static final String ID_TOKEN = "idToken";
 

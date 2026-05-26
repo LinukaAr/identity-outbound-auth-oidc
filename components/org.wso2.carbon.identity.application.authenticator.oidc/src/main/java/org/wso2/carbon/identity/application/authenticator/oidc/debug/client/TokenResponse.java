@@ -27,19 +27,14 @@ import java.util.Objects;
  */
 public class TokenResponse {
 
-    private final String accessToken;
     private final String idToken;
-    private final String refreshToken;
     private final String tokenType;
     private final String errorCode;
     private final String errorDescription;
 
-    private TokenResponse(String accessToken, String idToken, String refreshToken, String tokenType,
-            String errorCode, String errorDescription) {
+    private TokenResponse(String idToken, String tokenType, String errorCode, String errorDescription) {
 
-        this.accessToken = accessToken;
         this.idToken = idToken;
-        this.refreshToken = refreshToken;
         this.tokenType = tokenType;
         this.errorCode = errorCode;
         this.errorDescription = errorDescription;
@@ -48,16 +43,13 @@ public class TokenResponse {
     /**
      * Creates a successful token response.
      *
-     * @param accessToken  OAuth2 access token (required).
-     * @param idToken      OIDC ID token, may be null for non-OIDC flows.
-     * @param refreshToken Refresh token, may be null.
-     * @param tokenType    Token type (e.g. "Bearer"), may be null.
+     * @param idToken   OIDC ID token, may be null for non-OIDC flows.
+     * @param tokenType Token type (e.g. "Bearer"), may be null.
      * @return TokenResponse representing a successful exchange.
      */
-    public static TokenResponse success(String accessToken, String idToken, String refreshToken, String tokenType) {
+    public static TokenResponse success(String idToken, String tokenType) {
 
-        Objects.requireNonNull(accessToken, "accessToken required for success response");
-        return new TokenResponse(accessToken, idToken, refreshToken, tokenType, null, null);
+        return new TokenResponse(idToken, tokenType, null, null);
     }
 
     /**
@@ -70,18 +62,7 @@ public class TokenResponse {
     public static TokenResponse error(String errorCode, String errorDescription) {
 
         Objects.requireNonNull(errorCode, "errorCode required for error response");
-        return new TokenResponse(null, null, null, null, errorCode, errorDescription);
-    }
-
-    /**
-     * Returns the OAuth2 access token.
-     * Null when {@link #hasError()} is true.
-     *
-     * @return Access token string, or null on error.
-     */
-    public String getAccessToken() {
-
-        return accessToken;
+        return new TokenResponse(null, null, errorCode, errorDescription);
     }
 
     /**
@@ -93,17 +74,6 @@ public class TokenResponse {
     public String getIdToken() {
 
         return idToken;
-    }
-
-    /**
-     * Returns the OAuth2 refresh token.
-     * May be null if the IdP did not issue one.
-     *
-     * @return Refresh token string, or null if not present.
-     */
-    public String getRefreshToken() {
-
-        return refreshToken;
     }
 
     /**
