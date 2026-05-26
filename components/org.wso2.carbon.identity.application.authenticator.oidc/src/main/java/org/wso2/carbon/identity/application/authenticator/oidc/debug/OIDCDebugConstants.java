@@ -48,6 +48,16 @@ public final class OIDCDebugConstants {
     public static final String IDP_CONFIG = "idpConfig";
     public static final String DEBUG_IDP_NAME = "debugIdpName";
 
+    // Debug session metadata keys (shared by OIDC-based protocol providers).
+    public static final String DEBUG_AUTHENTICATOR_NAME = "debugAuthenticatorName";
+    public static final String IS_DEBUG_FLOW = "isDebugFlow";
+    public static final String DEBUG_TIMESTAMP = "debugTimestamp";
+    public static final String DEBUG_TENANT_DOMAIN = "debugTenantDomain";
+    public static final String DEBUG_IDP_DESCRIPTION = "debugIdpDescription";
+    public static final String RESPONSE_TYPE = "responseType";
+    public static final String PKCE_ENABLED = "pkceEnabled";
+    public static final String PKCE_METHOD = "pkceMethod";
+
     // OIDC callback parameters.
     public static final String OIDC_CODE_PARAM = "code";
     public static final String OIDC_STATE_PARAM = "state";

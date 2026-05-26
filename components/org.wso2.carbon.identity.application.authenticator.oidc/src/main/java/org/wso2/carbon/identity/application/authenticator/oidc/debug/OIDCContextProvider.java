@@ -144,8 +144,10 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         }
         context.put(OIDCDebugConstants.CLIENT_ID, clientId);
 
-        context.put(OIDCDebugConstants.AUTHORIZATION_ENDPOINT, resolveEndpoint(executor, propertyMap, true));
-        context.put(OIDCDebugConstants.TOKEN_ENDPOINT, resolveEndpoint(executor, propertyMap, false));
+        context.put(OIDCDebugConstants.AUTHORIZATION_ENDPOINT,
+                resolveEndpoint(executor, propertyMap, config.getName(), true));
+        context.put(OIDCDebugConstants.TOKEN_ENDPOINT,
+                resolveEndpoint(executor, propertyMap, config.getName(), false));
         context.put(OIDCDebugConstants.IDP_SCOPE, resolveScope(propertyMap, executor));
 
         String clientSecret = propertyMap.get(OIDCAuthenticatorConstants.CLIENT_SECRET);
@@ -154,18 +156,16 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         }
     }
 
-    private OpenIDConnectExecutor resolveExecutor(String authenticatorName) {
+    protected OpenIDConnectExecutor resolveExecutor(String authenticatorName) {
 
         return isKnownOidcImplementation(authenticatorName) ? OIDC_EXECUTOR : null;
     }
 
     private String resolveEndpoint(OpenIDConnectExecutor executor, Map<String, String> propertyMap,
-            boolean isAuthorizationEndpoint) throws ContextResolutionException {
+            String authenticatorName, boolean isAuthorizationEndpoint) throws ContextResolutionException {
 
         String endpoint = null;
         if (executor != null) {
-            // Endpoint resolution from the executor is best-effort: it may throw RuntimeException
-            // for malformed config. Fall back to direct property lookup below.
             try {
                 endpoint = isAuthorizationEndpoint
                         ? executor.getAuthorizationServerEndpoint(propertyMap)
@@ -181,6 +181,12 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
             endpoint = isAuthorizationEndpoint
                     ? propertyMap.get(OIDCAuthenticatorConstants.OAUTH2_AUTHZ_URL)
                     : propertyMap.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
+        }
+
+        if (StringUtils.isEmpty(endpoint) && IdpDebugConstants.IMPLEMENTATION_GOOGLE_OIDC.equals(authenticatorName)) {
+            endpoint = isAuthorizationEndpoint
+                    ? IdentityApplicationConstants.GOOGLE_OAUTH_URL
+                    : IdentityApplicationConstants.GOOGLE_TOKEN_URL;
         }
 
         if (StringUtils.isEmpty(endpoint)) {

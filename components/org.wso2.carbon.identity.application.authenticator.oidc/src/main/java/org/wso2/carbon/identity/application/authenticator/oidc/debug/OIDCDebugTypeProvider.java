@@ -19,7 +19,6 @@
 package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 
 import org.wso2.carbon.identity.debug.framework.extension.DebugTypeProvider;
-import org.wso2.carbon.identity.debug.idp.core.IdpDebugConstants;
 import org.wso2.carbon.identity.debug.framework.core.DebugContextProvider;
 import org.wso2.carbon.identity.debug.framework.core.DebugExecutor;
 import org.wso2.carbon.identity.debug.framework.core.DebugProcessor;
@@ -47,9 +46,7 @@ public class OIDCDebugTypeProvider implements DebugTypeProvider {
         this.contextProvider = contextProvider;
         this.executor = executor;
         this.processor = processor;
-        this.callbackHandler = new OIDCDebugCallbackHandler(processor,
-                OIDCDebugConstants.IDP_TYPE, IdpDebugConstants.IDP_TYPE_GOOGLE,
-                IdpDebugConstants.IDP_TYPE_GITHUB);
+        this.callbackHandler = new OIDCDebugCallbackHandler(processor);
     }
 
     @Override

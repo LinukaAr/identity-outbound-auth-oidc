@@ -18,119 +18,60 @@
 
 package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants;
 import org.wso2.carbon.identity.debug.framework.exception.DebugFrameworkServerException;
 import org.wso2.carbon.identity.debug.framework.extension.DebugCallbackHandler;
 import org.wso2.carbon.identity.debug.framework.model.DebugContext;
-import org.wso2.carbon.identity.debug.framework.store.DebugSessionStore;
-import org.wso2.carbon.identity.debug.idp.core.IdpDebugConstants;
 import org.wso2.carbon.identity.debug.idp.core.IdpDebugProcessor;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 /**
- * OAuth-style debug callback handler owned by the OIDC protocol bundle.
- * Processes callbacks for OIDC and related protocols (e.g., Google, GitHub) during the debug flow.
+ * OAuth-style debug callback handler for OIDC and OIDC-based protocols (Google, GitHub).
+ * Routing is performed by the interceptor using the protocol key stored in the debug session;
+ * this handler only processes the callback once routed.
  */
 public class OIDCDebugCallbackHandler implements DebugCallbackHandler {
 
-    private static final Log LOG = LogFactory.getLog(OIDCDebugCallbackHandler.class);
-
     private final IdpDebugProcessor processor;
-    private final Set<String> supportedProtocols;
 
     public OIDCDebugCallbackHandler(IdpDebugProcessor processor) {
 
-        this(processor, OIDCDebugConstants.IDP_TYPE, IdpDebugConstants.IDP_TYPE_GOOGLE,
-                IdpDebugConstants.IDP_TYPE_GITHUB);
-    }
-
-    public OIDCDebugCallbackHandler(IdpDebugProcessor processor, String... supportedProtocols) {
-
         this.processor = processor;
-        Set<String> normalizedProtocols = new HashSet<>();
-        if (supportedProtocols != null) {
-            Arrays.stream(supportedProtocols)
-                    .filter(StringUtils::isNotBlank)
-                    .map(protocol -> protocol.trim().toLowerCase(Locale.ROOT))
-                    .forEach(normalizedProtocols::add);
-        }
-        this.supportedProtocols = Collections.unmodifiableSet(normalizedProtocols);
     }
 
     @Override
-    public boolean canHandle(HttpServletRequest request) {
+    public String getSupportedProtocol() {
 
-        return isSupportedProtocol(request.getParameter(OIDCDebugConstants.OIDC_STATE_PARAM));
+        return OIDCDebugConstants.IDP_TYPE.toLowerCase();
     }
 
     @Override
-    public boolean handleCallback(HttpServletRequest request, HttpServletResponse response)
-            throws DebugFrameworkServerException {
-
-        if (!canHandle(request)) {
-            return false;
-        }
+    public boolean handleCallback(HttpServletRequest request, HttpServletResponse response,
+            Map<String, Object> sessionData) throws DebugFrameworkServerException {
 
         String code = request.getParameter(OIDCDebugConstants.OIDC_CODE_PARAM);
         String state = request.getParameter(OIDCDebugConstants.OIDC_STATE_PARAM);
 
-        DebugContext context = retrieveOrCreateContext(state);
+        DebugContext context = buildContext(sessionData);
         setContextProperties(context, code, state);
 
         if (response.isCommitted()) {
-            // Earlier filter already responded; nothing to add. Still claim the callback.
             return true;
         }
 
-        // Propagate processor failures to the coordinator, which owns the error response.
         processor.processCallback(request, response, context);
         return true;
     }
 
-    private boolean isSupportedProtocol(String state) {
+    private DebugContext buildContext(Map<String, Object> sessionData) {
 
-        if (CollectionUtils.isEmpty(supportedProtocols)) {
-            return true;
-        }
-
-        Map<String, Object> cachedContext;
-        try {
-            cachedContext = DebugSessionStore.getInstance().get(state);
-        } catch (DebugFrameworkServerException e) {
-            // canHandle is a routing decision and cannot throw; a store outage means we
-            // cannot confidently claim ownership, so defer to other handlers.
-            LOG.debug("Unable to resolve cached debug protocol for state: " + state, e);
-            return false;
-        }
-        if (cachedContext == null || cachedContext.isEmpty()) {
-            return false;
-        }
-
-        Object protocol = cachedContext.get(OIDCDebugConstants.CONTEXT_PROTOCOL);
-        if (protocol == null) {
-            return false;
-        }
-        return supportedProtocols.contains(protocol.toString().trim().toLowerCase(Locale.ENGLISH));
-    }
-
-    private DebugContext retrieveOrCreateContext(String state) throws DebugFrameworkServerException {
-
-        Map<String, Object> cachedContextMap = DebugSessionStore.getInstance().get(state);
-        if (cachedContextMap != null && !cachedContextMap.isEmpty()) {
-            return DebugContext.buildFromMap(cachedContextMap);
+        if (sessionData != null && !sessionData.isEmpty()) {
+            return DebugContext.buildFromMap(sessionData);
         }
 
         DebugContext context = new DebugContext();

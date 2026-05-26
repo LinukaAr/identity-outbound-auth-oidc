@@ -35,8 +35,6 @@ import org.wso2.carbon.identity.debug.framework.store.DebugSessionStore;
 import org.wso2.carbon.identity.debug.framework.util.DebugDiagnosticsUtil;
 
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
@@ -62,18 +60,10 @@ public class OIDCDebugExecutor extends DebugExecutor {
             String authzEndpoint = (String) context.getProperty(OIDCDebugConstants.AUTHORIZATION_ENDPOINT);
             String redirectUri = IdentityUtil.getServerURL(FrameworkConstants.COMMONAUTH, true, true);
 
-            validateRequiredParams(clientId, authzEndpoint);
-
             String codeVerifier = OIDCDebugUtil.generatePKCECodeVerifier();
             String codeChallenge = OIDCDebugUtil.generatePKCECodeChallenge(codeVerifier);
             String nonce = OIDCDebugUtil.generateNonce();
-
-            // debugId doubles as the OAuth state parameter — ties the callback back to this session.
-            // It is always set by the context provider; a missing value indicates a wiring error.
             String debugId = (String) context.getProperty(OIDCDebugConstants.DEBUG_ID);
-            if (StringUtils.isEmpty(debugId)) {
-                throw missingParam("DEBUG_ID");
-            }
 
             context.setProperty(OIDCDebugConstants.DEBUG_CODE_VERIFIER, codeVerifier);
             // Nonce stored here is validated against the id_token nonce claim during callback processing.
@@ -89,7 +79,6 @@ public class OIDCDebugExecutor extends DebugExecutor {
             cacheDebugContext(context);
 
             DebugResult result = new DebugResult();
-            result.setSuccessful(true);
             result.setDebugId(debugId);
             result.setStatus(DebugFrameworkConstants.DEBUG_STATUS_SUCCESS_INCOMPLETE);
             result.addResultData(OIDCDebugConstants.RESULT_AUTHORIZATION_URL, authorizationUrl);
@@ -104,7 +93,6 @@ public class OIDCDebugExecutor extends DebugExecutor {
                     OIDCDebugConstants.STATUS_FAILED, e.getMessage());
             throw e;
         } catch (UnsupportedEncodingException e) {
-            // UTF-8 is always supported on the JVM; this is effectively unreachable but checked.
             DebugDiagnosticsUtil.recordEvent(context, OIDCDebugConstants.STAGE_AUTHORIZATION_REQUEST,
                     OIDCDebugConstants.STATUS_FAILED, "Error encoding authorization URL: " + e.getMessage());
             throw new DebugExecutionException(ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getCode(),
@@ -113,45 +101,15 @@ public class OIDCDebugExecutor extends DebugExecutor {
         }
     }
 
-    @Override
-    public boolean canExecute(DebugContext debugContext) {
-
-        return debugContext != null
-                && debugContext.getProperty(OIDCDebugConstants.CLIENT_ID) != null
-                && debugContext.getProperty(OIDCDebugConstants.AUTHORIZATION_ENDPOINT) != null
-                && debugContext.getProperty(OIDCDebugConstants.IDP_SCOPE) != null;
-    }
-
-    @Override
-    public String getExecutorName() {
-
-        return OIDCDebugConstants.DEBUG_EXECUTOR_NAME;
-    }
-
-    private void validateRequiredParams(String clientId, String authzEndpoint) throws DebugExecutionException {
-
-        if (StringUtils.isEmpty(clientId)) {
-            throw missingParam("CLIENT_ID");
-        }
-        if (StringUtils.isEmpty(authzEndpoint)) {
-            throw missingParam("AUTHORIZATION_ENDPOINT");
-        }
-    }
-
     /**
      * Builds the complete OIDC Authorization URL with required parameters (client_id, redirect_uri, scope, state),
      * PKCE (code_challenge/method), and nonce.
      */
-    private String buildAuthorizationUrl(String authzEndpoint, String clientId, String redirectUri,
+    protected String buildAuthorizationUrl(String authzEndpoint, String clientId, String redirectUri,
             String state, String codeChallenge, DebugContext context)
             throws DebugExecutionException, UnsupportedEncodingException {
 
-        validateAuthorizationEndpoint(authzEndpoint);
-
         String scope = (String) context.getProperty(OIDCDebugConstants.IDP_SCOPE);
-        if (StringUtils.isEmpty(scope)) {
-            throw missingParam("scope");
-        }
 
         StringBuilder urlBuilder = new StringBuilder(authzEndpoint);
         urlBuilder.append(authzEndpoint.contains("?") ? "&" : "?").append("response_type=code");
@@ -171,47 +129,12 @@ public class OIDCDebugExecutor extends DebugExecutor {
     }
 
     /**
-     * Validates that the authorization endpoint is an absolute HTTPS URL. HTTP is permitted for
-     * loopback addresses to support local development.
-     */
-    private void validateAuthorizationEndpoint(String authzEndpoint) throws DebugExecutionException {
-
-        URI endpointUri;
-        try {
-            endpointUri = new URI(authzEndpoint);
-        } catch (URISyntaxException e) {
-            throw new DebugExecutionException(ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getCode(),
-                    ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getMessage(),
-                    "Invalid authorization endpoint: " + authzEndpoint, e);
-        }
-        if (!endpointUri.isAbsolute()) {
-            throw new DebugExecutionException(ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getCode(),
-                    ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getMessage(),
-                    "Authorization endpoint must be an absolute URL: " + authzEndpoint);
-        }
-        if (!"https".equalsIgnoreCase(endpointUri.getScheme())) {
-            String host = endpointUri.getHost();
-            boolean isLoopback = "localhost".equalsIgnoreCase(host)
-                    || "127.0.0.1".equals(host)
-                    || "::1".equals(host);
-            if (!isLoopback) {
-                throw new DebugExecutionException(ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getCode(),
-                        ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getMessage(),
-                        "Authorization endpoint must use HTTPS: " + authzEndpoint);
-            }
-        }
-    }
-
-    /**
      * Persists a sanitized copy of the context to the session store so it can be retrieved during the OIDC callback.
      * Credentials (clientSecret) are nulled out before storage and cleared from the live context after.
      */
     private void cacheDebugContext(DebugContext context) throws DebugExecutionException {
 
         String debugId = (String) context.getProperty(OIDCDebugConstants.DEBUG_ID);
-        if (debugId == null) {
-            throw missingParam("DEBUG_ID");
-        }
 
         try {
             DebugContext sanitizedContext = DebugContext.buildFromMap(context.getProperties());
@@ -223,18 +146,10 @@ public class OIDCDebugExecutor extends DebugExecutor {
                     "Failed to cache debug context for debugId: " + debugId, e);
         }
 
-        // Clear from live context too — prevents exposure if caller code logs or inspects context after this call.
         context.setProperty(OIDCDebugConstants.CLIENT_SECRET, null);
 
         if (LOG.isDebugEnabled()) {
             LOG.debug("Debug context cached successfully with debugId: " + debugId);
         }
-    }
-
-    private DebugExecutionException missingParam(String name) {
-
-        return new DebugExecutionException(ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getCode(),
-                ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getMessage(),
-                "Missing required parameter: " + name);
     }
 }
