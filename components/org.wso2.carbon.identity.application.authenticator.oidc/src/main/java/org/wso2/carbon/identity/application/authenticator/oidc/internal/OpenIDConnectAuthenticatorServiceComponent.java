@@ -33,7 +33,8 @@ import org.wso2.carbon.identity.application.authenticator.oidc.logout.idpinit.fa
 import org.wso2.carbon.identity.application.authenticator.oidc.logout.idpinit.factory.LogoutResponseFactory;
 import org.wso2.carbon.identity.application.authenticator.oidc.logout.idpinit.processor.FederatedIdpInitLogoutProcessor;
 import org.wso2.carbon.identity.claim.metadata.mgt.ClaimMetadataManagementService;
-import org.wso2.carbon.identity.debug.framework.extension.DebugTypeProvider;
+import org.wso2.carbon.identity.debug.idp.extension.IdpDebugTypeProvider;
+import org.wso2.carbon.identity.flow.execution.engine.graph.AuthenticationExecutor;
 import org.wso2.carbon.identity.flow.execution.engine.graph.Executor;
 import org.wso2.carbon.user.core.service.RealmService;
 import org.osgi.service.component.annotations.Activate;
@@ -63,8 +64,10 @@ public class OpenIDConnectAuthenticatorServiceComponent {
                     new FederatedIdpInitLogoutProcessor(), null);
             ctxt.getBundleContext().registerService(HttpIdentityResponseFactory.class.getName(),
                     new LogoutResponseFactory(), null);
-            ctxt.getBundleContext().registerService(Executor.class.getName(), new OpenIDConnectExecutor(), null);
-            ctxt.getBundleContext().registerService(DebugTypeProvider.class.getName(),
+            ctxt.getBundleContext().registerService(
+                    new String[]{Executor.class.getName(), AuthenticationExecutor.class.getName()},
+                    new OpenIDConnectExecutor(), null);
+            ctxt.getBundleContext().registerService(IdpDebugTypeProvider.class.getName(),
                     new OIDCDebugTypeProvider(), null);
             if (log.isDebugEnabled()) {
                 log.debug("OpenID Connect Authenticator bundle is activated");

@@ -18,10 +18,15 @@
 
 package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 
+import java.util.Map;
+
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.oltu.oauth2.client.request.OAuthClientRequest;
+import org.apache.oltu.oauth2.common.exception.OAuthSystemException;
 import org.wso2.carbon.identity.application.authentication.framework.util.FrameworkConstants;
+import org.wso2.carbon.identity.application.authenticator.oidc.OIDCAuthenticatorConstants;
 import org.wso2.carbon.identity.application.authenticator.oidc.debug.util.OIDCDebugUtil;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants;
@@ -34,15 +39,11 @@ import org.wso2.carbon.identity.debug.framework.model.DebugResult;
 import org.wso2.carbon.identity.debug.framework.store.DebugSessionStore;
 import org.wso2.carbon.identity.debug.framework.util.DebugDiagnosticsUtil;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-
 /**
  * OIDC debug flow executor.
- * Reads resolved OIDC parameters from the context (populated by OIDCContextProvider) and generates a complete
- * Authorization URL with PKCE and nonce parameters, then persists the context to the session store for callback
- * retrieval.
+ * Reads resolved OIDC parameters from the context (populated by OIDCContextProvider), delegates authorization URL
+ * construction to {@link OIDCCommonUtil#buildAuthorizationUrl}, and persists the context to the session store for
+ * callback retrieval.
  */
 public class OIDCDebugExecutor extends DebugExecutor {
 
@@ -58,19 +59,17 @@ public class OIDCDebugExecutor extends DebugExecutor {
         try {
             String clientId = (String) context.getProperty(OIDCDebugConstants.CLIENT_ID);
             String authzEndpoint = (String) context.getProperty(OIDCDebugConstants.AUTHORIZATION_ENDPOINT);
+            String scope = (String) context.getProperty(OIDCDebugConstants.IDP_SCOPE);
             String redirectUri = IdentityUtil.getServerURL(FrameworkConstants.COMMONAUTH, true, true);
 
-            String codeVerifier = OIDCDebugUtil.generatePKCECodeVerifier();
-            String codeChallenge = OIDCDebugUtil.generatePKCECodeChallenge(codeVerifier);
             String nonce = OIDCDebugUtil.generateNonce();
             String debugId = (String) context.getProperty(OIDCDebugConstants.DEBUG_ID);
 
-            context.setProperty(OIDCDebugConstants.DEBUG_CODE_VERIFIER, codeVerifier);
             // Nonce stored here is validated against the id_token nonce claim during callback processing.
             context.setProperty(OIDCDebugConstants.DEBUG_NONCE, nonce);
 
-            String authorizationUrl = buildAuthorizationUrl(authzEndpoint, clientId, redirectUri, debugId,
-                    codeChallenge, context);
+            String authorizationUrl = buildAuthorizationUrl(authzEndpoint, clientId, redirectUri,
+                    scope, debugId, nonce, null, null, null);
             context.setProperty(OIDCDebugConstants.DEBUG_EXTERNAL_REDIRECT_URL, authorizationUrl);
 
             DebugDiagnosticsUtil.recordEvent(context, OIDCDebugConstants.STAGE_AUTHORIZATION_REQUEST,
@@ -92,40 +91,45 @@ public class OIDCDebugExecutor extends DebugExecutor {
             DebugDiagnosticsUtil.recordEvent(context, OIDCDebugConstants.STAGE_AUTHORIZATION_REQUEST,
                     OIDCDebugConstants.STATUS_FAILED, e.getMessage());
             throw e;
-        } catch (UnsupportedEncodingException e) {
+        } catch (OAuthSystemException e) {
             DebugDiagnosticsUtil.recordEvent(context, OIDCDebugConstants.STAGE_AUTHORIZATION_REQUEST,
-                    OIDCDebugConstants.STATUS_FAILED, "Error encoding authorization URL: " + e.getMessage());
+                    OIDCDebugConstants.STATUS_FAILED, "Error building authorization URL: " + e.getMessage());
             throw new DebugExecutionException(ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getCode(),
                     ErrorMessages.ERROR_CODE_EXECUTION_FAILED.getMessage(),
-                    "Error encoding authorization URL: " + e.getMessage(), e);
+                    "Error building authorization URL: " + e.getMessage(), e);
         }
     }
 
-    /**
-     * Builds the complete OIDC Authorization URL with required parameters (client_id, redirect_uri, scope, state),
-     * PKCE (code_challenge/method), and nonce.
+    /*
+     * Builds an OIDC authorization request URL with optional PKCE and nonce parameters.
      */
-    protected String buildAuthorizationUrl(String authzEndpoint, String clientId, String redirectUri,
-            String state, String codeChallenge, DebugContext context)
-            throws DebugExecutionException, UnsupportedEncodingException {
+    public static String buildAuthorizationUrl(String authorizationEndpoint, String clientId, String callbackUrl,
+                                               String scopes, String state, String nonce,
+                                               String codeChallenge, String codeChallengeMethod,
+                                               Map<String, String> additionalParams) throws OAuthSystemException {
 
-        String scope = (String) context.getProperty(OIDCDebugConstants.IDP_SCOPE);
+        OAuthClientRequest.AuthenticationRequestBuilder builder = OAuthClientRequest
+                .authorizationLocation(authorizationEndpoint)
+                .setClientId(clientId)
+                .setRedirectURI(callbackUrl)
+                .setResponseType(OIDCAuthenticatorConstants.OAUTH2_GRANT_TYPE_CODE)
+                .setScope(scopes)
+                .setState(state);
 
-        StringBuilder urlBuilder = new StringBuilder(authzEndpoint);
-        urlBuilder.append(authzEndpoint.contains("?") ? "&" : "?").append("response_type=code");
-        urlBuilder.append("&client_id=").append(URLEncoder.encode(clientId, StandardCharsets.UTF_8.name()));
-        urlBuilder.append("&redirect_uri=").append(URLEncoder.encode(redirectUri, StandardCharsets.UTF_8.name()));
-        urlBuilder.append("&scope=").append(URLEncoder.encode(scope, StandardCharsets.UTF_8.name()));
-        urlBuilder.append("&state=").append(URLEncoder.encode(state, StandardCharsets.UTF_8.name()));
-        urlBuilder.append("&code_challenge=").append(URLEncoder.encode(codeChallenge, StandardCharsets.UTF_8.name()));
-        urlBuilder.append("&").append(OIDCDebugConstants.CODE_CHALLENGE_METHOD_PARAM).append("=")
-                .append(OIDCDebugConstants.PKCE_METHOD_S256);
-
-        String nonce = (String) context.getProperty(OIDCDebugConstants.DEBUG_NONCE);
-        if (StringUtils.isNotEmpty(nonce)) {
-            urlBuilder.append("&nonce=").append(URLEncoder.encode(nonce, StandardCharsets.UTF_8.name()));
+        if (StringUtils.isNotBlank(nonce)) {
+            builder.setParameter(OIDCAuthenticatorConstants.Claim.NONCE, nonce);
         }
-        return urlBuilder.toString();
+        if (StringUtils.isNotBlank(codeChallenge)) {
+            builder.setParameter("code_challenge", codeChallenge);
+            builder.setParameter("code_challenge_method",
+                    StringUtils.isNotBlank(codeChallengeMethod) ? codeChallengeMethod : "S256");
+        }
+        if (additionalParams != null) {
+            for (Map.Entry<String, String> entry : additionalParams.entrySet()) {
+                builder.setParameter(entry.getKey(), entry.getValue());
+            }
+        }
+        return builder.buildQueryMessage().getLocationUri();
     }
 
     /**
@@ -137,7 +141,7 @@ public class OIDCDebugExecutor extends DebugExecutor {
         String debugId = (String) context.getProperty(OIDCDebugConstants.DEBUG_ID);
 
         try {
-            DebugContext sanitizedContext = DebugContext.buildFromMap(context.getProperties());
+            DebugContext sanitizedContext = DebugContext.buildContextFromMap(context.getProperties());
             sanitizedContext.setResourceType(context.getResourceType());
             sanitizedContext.setProperty(OIDCDebugConstants.CLIENT_SECRET, null);
             DebugSessionStore.getInstance().put(debugId, sanitizedContext);

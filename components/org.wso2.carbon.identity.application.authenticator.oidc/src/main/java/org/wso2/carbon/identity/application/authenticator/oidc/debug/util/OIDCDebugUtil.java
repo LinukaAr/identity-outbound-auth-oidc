@@ -18,64 +18,17 @@
 
 package org.wso2.carbon.identity.application.authenticator.oidc.debug.util;
 
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.wso2.carbon.identity.application.authenticator.oidc.debug.OIDCDebugConstants;
-
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * Utility class for OAuth2 debug operations.
- * Provides utilities for PKCE, URL building, parameter extraction, and state
- * management.
+ * Nonce generation helpers for the OIDC debug flow.
  */
-public class OIDCDebugUtil {
+public final class OIDCDebugUtil {
 
-    private static final Log LOG = LogFactory.getLog(OIDCDebugUtil.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private OIDCDebugUtil() {
-
-        // Prevent instantiation
-    }
-
-    /**
-     * Generate PKCE code verifier.
-     *
-     * @return PKCE code verifier string (43-128 characters).
-     */
-    public static String generatePKCECodeVerifier() {
-
-        byte[] randomBytes = new byte[32];
-        SECURE_RANDOM.nextBytes(randomBytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
-    }
-
-    /**
-     * Generate PKCE code challenge from verifier using S256 method.
-     *
-     * @param codeVerifier The PKCE code verifier.
-     * @return PKCE code challenge (base64url encoded).
-     */
-    public static String generatePKCECodeChallenge(String codeVerifier) {
-
-        if (StringUtils.isEmpty(codeVerifier)) {
-            throw new IllegalArgumentException("codeVerifier must not be null or empty");
-        }
-
-        try {
-            MessageDigest messageDigest = MessageDigest.getInstance(OIDCDebugConstants.SHA256_ALGORITHM);
-            byte[] hash = messageDigest.digest(codeVerifier.getBytes(StandardCharsets.UTF_8));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-        } catch (NoSuchAlgorithmException e) {
-            LOG.error("Error generating PKCE code challenge: SHA-256 algorithm not available.", e);
-            throw new IllegalStateException("SHA-256 algorithm not available for PKCE code challenge generation", e);
-        }
     }
 
     /**

@@ -18,17 +18,17 @@
 
 package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 
-import org.wso2.carbon.identity.debug.framework.extension.DebugTypeProvider;
 import org.wso2.carbon.identity.debug.framework.core.DebugContextProvider;
 import org.wso2.carbon.identity.debug.framework.core.DebugExecutor;
 import org.wso2.carbon.identity.debug.framework.core.DebugProcessor;
-import org.wso2.carbon.identity.debug.idp.core.IdpDebugProcessor;
 import org.wso2.carbon.identity.debug.framework.extension.DebugCallbackHandler;
+import org.wso2.carbon.identity.debug.idp.core.IdpDebugProcessor;
+import org.wso2.carbon.identity.debug.idp.extension.IdpDebugTypeProvider;
 
 /**
- * OIDC implementation of DebugTypeProvider.
+ * OIDC implementation of IdpDebugTypeProvider.
  */
-public class OIDCDebugTypeProvider implements DebugTypeProvider {
+public class OIDCDebugTypeProvider implements IdpDebugTypeProvider {
 
     private final DebugContextProvider contextProvider;
     private final DebugExecutor executor;
@@ -50,9 +50,17 @@ public class OIDCDebugTypeProvider implements DebugTypeProvider {
     }
 
     @Override
-    public String getProtocolType() {
+    public boolean supportsAuthenticator(String authenticatorName) {
 
-        return OIDCDebugConstants.IDP_TYPE;
+        return OIDCDebugConstants.OPENID_CONNECT.equals(authenticatorName)
+                || OIDCDebugConstants.GOOGLE_OIDC.equals(authenticatorName)
+                || OIDCDebugConstants.GITHUB_OIDC.equals(authenticatorName);
+    }
+
+    @Override
+    public String getTypeIdentifier() {
+
+        return OIDCDebugConstants.IDP_TYPE_IDENTIFIER;
     }
 
     @Override
@@ -77,5 +85,4 @@ public class OIDCDebugTypeProvider implements DebugTypeProvider {
 
         return callbackHandler;
     }
-
 }

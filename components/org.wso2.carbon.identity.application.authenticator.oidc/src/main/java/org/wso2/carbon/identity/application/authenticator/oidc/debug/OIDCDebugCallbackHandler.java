@@ -41,16 +41,10 @@ public class OIDCDebugCallbackHandler implements DebugCallbackHandler {
     }
 
     @Override
-    public String getSupportedProtocol() {
-
-        return OIDCDebugConstants.IDP_TYPE.toLowerCase();
-    }
-
-    @Override
     public boolean handleCallback(HttpServletRequest request, HttpServletResponse response,
             Map<String, Object> sessionData) throws DebugFrameworkServerException {
 
-        DebugContext context = DebugContext.buildFromMap(sessionData);
+        DebugContext context = DebugContext.buildContextFromMap(sessionData);
         processor.processCallback(request, response, context);
         return true;
     }

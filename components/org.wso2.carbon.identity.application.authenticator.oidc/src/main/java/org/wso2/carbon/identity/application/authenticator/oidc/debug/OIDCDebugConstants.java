@@ -32,11 +32,14 @@ public final class OIDCDebugConstants {
     private OIDCDebugConstants() {
     }
 
-    // IDP type identifier.
-    public static final String IDP_TYPE = "OIDC";
+    // Authenticator implementation names handled by this provider.
+    public static final String OPENID_CONNECT = "OpenIDConnectAuthenticator";
+    public static final String GOOGLE_OIDC = "GoogleOIDCAuthenticator";
+    public static final String GITHUB_OIDC = "GitHubOIDCAuthenticator";
 
-    // Debug component names.
-    public static final String DEBUG_EXECUTOR_NAME = "OIDCDebugExecutor";
+    // Stable identifier used as the callback-routing key stored in the debug session.
+    public static final String IDP_TYPE_IDENTIFIER = "oidc";
+
     public static final String DEBUG_RESULT_CACHE_KEY = "DEBUG_RESULT_CACHE";
 
     // OIDC configuration parameters.
@@ -46,35 +49,16 @@ public final class OIDCDebugConstants {
     public static final String TOKEN_ENDPOINT = "tokenEndpoint";
     public static final String IDP_SCOPE = "idpScope";
     public static final String IDP_CONFIG = "idpConfig";
-    public static final String DEBUG_IDP_NAME = "debugIdpName";
-
-    // Debug session metadata keys (shared by OIDC-based protocol providers).
-    public static final String DEBUG_AUTHENTICATOR_NAME = "debugAuthenticatorName";
-    public static final String IS_DEBUG_FLOW = "isDebugFlow";
-    public static final String DEBUG_TIMESTAMP = "debugTimestamp";
-    public static final String DEBUG_TENANT_DOMAIN = "debugTenantDomain";
-    public static final String DEBUG_IDP_DESCRIPTION = "debugIdpDescription";
-    public static final String RESPONSE_TYPE = "responseType";
-    public static final String PKCE_ENABLED = "pkceEnabled";
-    public static final String PKCE_METHOD = "pkceMethod";
 
     // OIDC callback parameters.
     public static final String OIDC_CODE_PARAM = "code";
-    public static final String OIDC_STATE_PARAM = "state";
     public static final String OIDC_ERROR_PARAM = "error";
     public static final String OIDC_ERROR_DESCRIPTION_PARAM = "error_description";
 
     // OIDC response token fields.
     public static final String TOKEN_TYPE = "tokenType";
     public static final String ID_TOKEN = "idToken";
-
-    // OIDC PKCE parameters.
-    public static final String PKCE_METHOD_S256 = "S256";
-    public static final String CODE_CHALLENGE_METHOD_PARAM = "code_challenge_method";
-    public static final String SHA256_ALGORITHM = "SHA-256";
-
-    // Error codes.
-    public static final String ERROR_CODE_INVALID_REQUEST = "INVALID_REQUEST";
+    public static final String ACCESS_TOKEN = "accessToken";
 
     public static final String DEBUG_DIAGNOSTICS = DebugFrameworkConstants.DEBUG_DIAGNOSTICS;
 
@@ -91,24 +75,19 @@ public final class OIDCDebugConstants {
     public static final String STATUS_PARTIAL = "partial";
     public static final String STATUS_FAILED = "failed";
     public static final String STATUS_PENDING = "pending";
-    public static final String STATUS_FOUND = "found";
 
     // Debug context/session property keys.
     public static final String DEBUG_ID = "debugId";
-    public static final String CONTEXT_PROTOCOL = "protocol";
 
     // Debug runtime state keys.
     public static final String DEBUG_AUTH_ERROR = "authError";
     public static final String DEBUG_AUTH_SUCCESS = "authSuccess";
     public static final String DEBUG_INCOMING_CLAIMS = "DEBUG_INCOMING_CLAIMS";
-    public static final String DEBUG_CODE_VERIFIER = "DEBUG_CODE_VERIFIER";
     public static final String DEBUG_NONCE = "DEBUG_NONCE";
     public static final String DEBUG_EXTERNAL_REDIRECT_URL = "DEBUG_EXTERNAL_REDIRECT_URL";
     public static final String DEBUG_IDP_RESOURCE_ID = "debugIdpResourceId";
 
     // Claim mapping field keys.
-    public static final String CLAIM_MAPPING_REMOTE = "remote";
-    public static final String CLAIM_MAPPING_LOCAL = "local";
     public static final String CLAIM_MAPPING_IDP_CLAIM = "idpClaim";
     public static final String CLAIM_MAPPING_LOCAL_CLAIM = "localClaim";
     public static final String CLAIM_MAPPING_VALUE = "value";
@@ -124,24 +103,18 @@ public final class OIDCDebugConstants {
     public static final String ACCOUNT_LINKING_REASON = "reason";
     public static final String DIAG_FEDERATED_ATTRIBUTE = "federatedAttribute";
 
-    // Diagnostic detail keys stripped from the sanitized output.
-    public static final String DIAG_IDP_NAME = "idpName";
-
     /**
      * Internal diagnostic detail keys that must be dropped before the diagnostics are exposed in
-     * the API response (e.g. they carry deployment configuration, not user-facing debug info).
+     * the API response (they carry deployment configuration, not user-facing debug info).
      */
     public static final Set<String> DIAGNOSTIC_INTERNAL_DETAIL_KEYS;
 
     static {
         Set<String> internalKeys = new HashSet<>();
-        internalKeys.add(DIAG_IDP_NAME);
+        internalKeys.add("idpName");
         internalKeys.add(TOKEN_ENDPOINT);
         DIAGNOSTIC_INTERNAL_DETAIL_KEYS = Collections.unmodifiableSet(internalKeys);
     }
-
-    // OIDC structured-claim prefix used when flattening the "address" claim.
-    public static final String CLAIM_ADDRESS_PREFIX = "address.";
 
     // Claim status values.
     public static final String CLAIM_STATUS_SUCCESSFUL = "Successful";
@@ -159,18 +132,13 @@ public final class OIDCDebugConstants {
 
     // OIDC standard claim names.
     public static final String CLAIM_NONCE = "nonce";
-    public static final String CLAIM_ADDRESS = "address";
     public static final String CLAIM_EMAIL = "email";
-    public static final String CLAIM_SUB = "sub";
-    public static final String CLAIM_USER_ID = "user_id";
-    public static final String CLAIM_USER_ID_ALT = "userId";
-
-    // Request parameter names.
-    public static final String PARAM_IDP_ID = "idpId";
-    public static final String PARAM_CONNECTION_ID = "connectionId";
 
     // Authenticator property names.
     public static final String PROP_ADDITIONAL_QUERY_PARAMS = "AdditionalQueryParameters";
     public static final String DEFAULT_SCOPE = "openid";
+
+    // Context key holding the full IdP authenticator property map.
+    public static final String AUTHENTICATOR_PROPERTIES = "authenticatorProperties";
 
 }

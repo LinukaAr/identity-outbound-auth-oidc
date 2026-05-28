@@ -31,7 +31,6 @@ import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants;
 import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants.ErrorMessages;
 import org.wso2.carbon.identity.debug.framework.exception.ContextResolutionException;
 import org.wso2.carbon.identity.debug.framework.model.DebugContext;
-import org.wso2.carbon.identity.debug.idp.core.IdpDebugConstants;
 import org.wso2.carbon.identity.debug.idp.core.IdpDebugContextProvider;
 
 import java.io.UnsupportedEncodingException;
@@ -59,6 +58,7 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         Map<String, Object> contextMap = new HashMap<>();
         contextMap.put(OIDCDebugConstants.DEBUG_IDP_RESOURCE_ID,
                 StringUtils.defaultIfEmpty(preloadedIdp.getResourceId(), preloadedIdp.getIdentityProviderName()));
+        contextMap.put(OIDCDebugConstants.IDP_CONFIG, preloadedIdp);
 
         FederatedAuthenticatorConfig authenticatorConfig = findOIDCAuthenticatorConfig(preloadedIdp, authenticator);
         if (authenticatorConfig == null) {
@@ -70,9 +70,9 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
 
         contextMap.put(OIDCDebugConstants.DEBUG_ID,
                 DebugFrameworkConstants.DEBUG_PREFIX + UUID.randomUUID());
-        contextMap.put(OIDCDebugConstants.CONTEXT_PROTOCOL, OIDCDebugConstants.IDP_TYPE);
+        contextMap.put(DebugFrameworkConstants.CONTEXT_DEBUG_TYPE_KEY, OIDCDebugConstants.IDP_TYPE_IDENTIFIER);
 
-        return DebugContext.buildFromMap(contextMap);
+        return DebugContext.buildContextFromMap(contextMap);
     }
 
     private void validateIdpIsEnabled(IdentityProvider idp) throws ContextResolutionException {
@@ -109,17 +109,19 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         return null;
     }
 
+    //TODO change implementaionName
     private boolean isOidcAuthenticator(String implementationName) {
 
         return isKnownOidcImplementation(implementationName)
                 || (StringUtils.isNotEmpty(implementationName) && implementationName.endsWith("OIDCAuthenticator"));
     }
 
+    //TODO change implementaionName
     private boolean isKnownOidcImplementation(String implementationName) {
 
-        return IdpDebugConstants.IMPLEMENTATION_OPENID_CONNECT.equals(implementationName)
-                || IdpDebugConstants.IMPLEMENTATION_GOOGLE_OIDC.equals(implementationName)
-                || IdpDebugConstants.IMPLEMENTATION_GITHUB.equals(implementationName);
+        return OIDCDebugConstants.OPENID_CONNECT.equals(implementationName)
+                || OIDCDebugConstants.GOOGLE_OIDC.equals(implementationName)
+                || OIDCDebugConstants.GITHUB_OIDC.equals(implementationName);
     }
 
     private void extractOIDCConfigs(FederatedAuthenticatorConfig config, Map<String, Object> context)
@@ -144,16 +146,26 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         }
         context.put(OIDCDebugConstants.CLIENT_ID, clientId);
 
-        context.put(OIDCDebugConstants.AUTHORIZATION_ENDPOINT,
-                resolveEndpoint(executor, propertyMap, config.getName(), true));
-        context.put(OIDCDebugConstants.TOKEN_ENDPOINT,
-                resolveEndpoint(executor, propertyMap, config.getName(), false));
-        context.put(OIDCDebugConstants.IDP_SCOPE, resolveScope(propertyMap, executor));
+        String authzEndpoint = resolveEndpoint(executor, propertyMap, config.getName(), true);
+        String tokenEndpoint = resolveEndpoint(executor, propertyMap, config.getName(), false);
+        String scope = resolveScope(propertyMap, executor);
+
+        context.put(OIDCDebugConstants.AUTHORIZATION_ENDPOINT, authzEndpoint);
+        context.put(OIDCDebugConstants.TOKEN_ENDPOINT, tokenEndpoint);
+        context.put(OIDCDebugConstants.IDP_SCOPE, scope);
+
+        // Backfill resolved fallbacks into the property map so downstream calls reading by the
+        // original property names (OAUTH2_TOKEN_URL, SCOPES, etc.) see the resolved values too
+        // (relevant for IdPs like Google that don't persist endpoint URLs).
+        propertyMap.put(OIDCAuthenticatorConstants.OAUTH2_AUTHZ_URL, authzEndpoint);
+        propertyMap.put(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL, tokenEndpoint);
+        propertyMap.put(IdentityApplicationConstants.Authenticator.OIDC.SCOPES, scope);
 
         String clientSecret = propertyMap.get(OIDCAuthenticatorConstants.CLIENT_SECRET);
         if (StringUtils.isNotEmpty(clientSecret)) {
             context.put(OIDCDebugConstants.CLIENT_SECRET, clientSecret);
         }
+        context.put(OIDCDebugConstants.AUTHENTICATOR_PROPERTIES, propertyMap);
     }
 
     protected OpenIDConnectExecutor resolveExecutor(String authenticatorName) {
@@ -183,7 +195,7 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
                     : propertyMap.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL);
         }
 
-        if (StringUtils.isEmpty(endpoint) && IdpDebugConstants.IMPLEMENTATION_GOOGLE_OIDC.equals(authenticatorName)) {
+        if (StringUtils.isEmpty(endpoint) && OIDCDebugConstants.GOOGLE_OIDC.equals(authenticatorName)) {
             endpoint = isAuthorizationEndpoint
                     ? IdentityApplicationConstants.GOOGLE_OAUTH_URL
                     : IdentityApplicationConstants.GOOGLE_TOKEN_URL;
