@@ -33,9 +33,7 @@ import org.wso2.carbon.identity.debug.framework.exception.ContextResolutionExcep
 import org.wso2.carbon.identity.debug.framework.model.DebugContext;
 import org.wso2.carbon.identity.debug.idp.core.IdpDebugContextProvider;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -47,7 +45,17 @@ import java.util.UUID;
 public class OIDCContextProvider extends IdpDebugContextProvider {
 
     private static final Log LOG = LogFactory.getLog(OIDCContextProvider.class);
-    private static final OpenIDConnectExecutor OIDC_EXECUTOR = new OpenIDConnectExecutor();
+    private final OpenIDConnectExecutor executor;
+
+    public OIDCContextProvider() {
+
+        this(new OpenIDConnectExecutor());
+    }
+
+    public OIDCContextProvider(OpenIDConnectExecutor executor) {
+
+        this.executor = executor;
+    }
 
     @Override
     public DebugContext resolveContext(String idpId, String authenticator, IdentityProvider preloadedIdp)
@@ -58,7 +66,6 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         Map<String, Object> contextMap = new HashMap<>();
         contextMap.put(OIDCDebugConstants.DEBUG_IDP_RESOURCE_ID,
                 StringUtils.defaultIfEmpty(preloadedIdp.getResourceId(), preloadedIdp.getIdentityProviderName()));
-        contextMap.put(OIDCDebugConstants.IDP_CONFIG, preloadedIdp);
 
         FederatedAuthenticatorConfig authenticatorConfig = findOIDCAuthenticatorConfig(preloadedIdp, authenticator);
         if (authenticatorConfig == null) {
@@ -109,19 +116,17 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         return null;
     }
 
-    //TODO change implementaionName
-    private boolean isOidcAuthenticator(String implementationName) {
+    private boolean isOidcAuthenticator(String authenticatorName) {
 
-        return isKnownOidcImplementation(implementationName)
-                || (StringUtils.isNotEmpty(implementationName) && implementationName.endsWith("OIDCAuthenticator"));
+        return isKnownOidcImplementation(authenticatorName)
+                || (StringUtils.isNotEmpty(authenticatorName) && authenticatorName.endsWith("OIDCAuthenticator"));
     }
 
-    //TODO change implementaionName
-    private boolean isKnownOidcImplementation(String implementationName) {
+    private boolean isKnownOidcImplementation(String authenticatorName) {
 
-        return OIDCDebugConstants.OPENID_CONNECT.equals(implementationName)
-                || OIDCDebugConstants.GOOGLE_OIDC.equals(implementationName)
-                || OIDCDebugConstants.GITHUB_OIDC.equals(implementationName);
+        return OIDCDebugConstants.OPENID_CONNECT.equals(authenticatorName)
+                || OIDCDebugConstants.GOOGLE_OIDC.equals(authenticatorName)
+                || OIDCDebugConstants.GITHUB_OIDC.equals(authenticatorName);
     }
 
     private void extractOIDCConfigs(FederatedAuthenticatorConfig config, Map<String, Object> context)
@@ -138,7 +143,7 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
                 propertyMap.put(prop.getName(), prop.getValue());
             }
         }
-        OpenIDConnectExecutor executor = resolveExecutor(config.getName());
+        OpenIDConnectExecutor configExecutor = resolveExecutor(config.getName());
 
         String clientId = propertyMap.get(OIDCAuthenticatorConstants.CLIENT_ID);
         if (StringUtils.isEmpty(clientId)) {
@@ -146,9 +151,9 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         }
         context.put(OIDCDebugConstants.CLIENT_ID, clientId);
 
-        String authzEndpoint = resolveEndpoint(executor, propertyMap, config.getName(), true);
-        String tokenEndpoint = resolveEndpoint(executor, propertyMap, config.getName(), false);
-        String scope = resolveScope(propertyMap, executor);
+        String authzEndpoint = resolveEndpoint(configExecutor, propertyMap, config.getName(), true);
+        String tokenEndpoint = resolveEndpoint(configExecutor, propertyMap, config.getName(), false);
+        String scope = resolveScope(propertyMap, configExecutor);
 
         context.put(OIDCDebugConstants.AUTHORIZATION_ENDPOINT, authzEndpoint);
         context.put(OIDCDebugConstants.TOKEN_ENDPOINT, tokenEndpoint);
@@ -161,16 +166,13 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
         propertyMap.put(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL, tokenEndpoint);
         propertyMap.put(IdentityApplicationConstants.Authenticator.OIDC.SCOPES, scope);
 
-        String clientSecret = propertyMap.get(OIDCAuthenticatorConstants.CLIENT_SECRET);
-        if (StringUtils.isNotEmpty(clientSecret)) {
-            context.put(OIDCDebugConstants.CLIENT_SECRET, clientSecret);
-        }
-        context.put(OIDCDebugConstants.AUTHENTICATOR_PROPERTIES, propertyMap);
+        propertyMap.remove(OIDCAuthenticatorConstants.CLIENT_SECRET);
+        context.put(OIDCDebugConstants.AUTHENTICATOR_PROPERTIES, Collections.unmodifiableMap(propertyMap));
     }
 
     protected OpenIDConnectExecutor resolveExecutor(String authenticatorName) {
 
-        return isKnownOidcImplementation(authenticatorName) ? OIDC_EXECUTOR : null;
+        return isKnownOidcImplementation(authenticatorName) ? executor : null;
     }
 
     private String resolveEndpoint(OpenIDConnectExecutor executor, Map<String, String> propertyMap,
@@ -183,9 +185,8 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
                         ? executor.getAuthorizationServerEndpoint(propertyMap)
                         : executor.getTokenEndpoint(propertyMap);
             } catch (RuntimeException e) {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Failed to get endpoint from executor: " + e.getMessage());
-                }
+                LOG.warn("Failed to resolve endpoint from executor for authenticator '" + authenticatorName
+                        + "': " + e.getMessage() + ". Falling back to property map.", e);
             }
         }
 
@@ -239,12 +240,7 @@ public class OIDCContextProvider extends IdpDebugContextProvider {
             if (!param.trim().startsWith("scope=")) {
                 continue;
             }
-            try {
-                return URLDecoder.decode(param.substring("scope=".length()), StandardCharsets.UTF_8.name());
-            } catch (UnsupportedEncodingException e) {
-                // unreachable — UTF-8 is always supported on the JVM.
-                return null;
-            }
+            return param.substring("scope=".length());
         }
         return null;
     }

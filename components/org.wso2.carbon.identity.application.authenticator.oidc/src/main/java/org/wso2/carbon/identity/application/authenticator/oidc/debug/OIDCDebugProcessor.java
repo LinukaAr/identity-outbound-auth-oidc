@@ -27,8 +27,10 @@ import org.wso2.carbon.identity.application.authenticator.oidc.OIDCAuthenticator
 import org.wso2.carbon.identity.application.authenticator.oidc.OpenIDConnectExecutor;
 import org.wso2.carbon.identity.application.common.model.AccountLookupAttributeMappingConfig;
 import org.wso2.carbon.identity.application.common.model.ClaimMapping;
+import org.wso2.carbon.identity.application.common.model.FederatedAuthenticatorConfig;
 import org.wso2.carbon.identity.application.common.model.IdentityProvider;
 import org.wso2.carbon.identity.application.common.model.JustInTimeProvisioningConfig;
+import org.wso2.carbon.identity.application.common.model.Property;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants;
@@ -62,18 +64,33 @@ import javax.servlet.http.HttpServletResponse;
 public class OIDCDebugProcessor extends IdpDebugProcessor {
 
     private static final Log LOG = LogFactory.getLog(OIDCDebugProcessor.class);
-    private static final OpenIDConnectExecutor EXECUTOR = new OpenIDConnectExecutor() {
-        @Override
-        protected void onRawClaimsResolved(FlowExecutionContext flowExecutionContext, String idToken,
-                Map<String, Object> rawClaims) {
-
-            if (StringUtils.isNotBlank(idToken)) {
-                flowExecutionContext.setProperty(OIDCDebugConstants.ID_TOKEN, idToken);
-            }
-            flowExecutionContext.setProperty(OIDCDebugConstants.DEBUG_INCOMING_CLAIMS, new HashMap<>(rawClaims));
-        }
-    };
+    private final OpenIDConnectExecutor executor;
     private final OIDCDebugResultBuilder resultBuilder = new OIDCDebugResultBuilder();
+
+    public OIDCDebugProcessor() {
+
+        this(createDefaultExecutor());
+    }
+
+    public OIDCDebugProcessor(OpenIDConnectExecutor executor) {
+
+        this.executor = executor;
+    }
+
+    static OpenIDConnectExecutor createDefaultExecutor() {
+
+        return new OpenIDConnectExecutor() {
+            @Override
+            protected void onRawClaimsResolved(FlowExecutionContext flowExecutionContext, String idToken,
+                    Map<String, Object> rawClaims) {
+
+                if (StringUtils.isNotBlank(idToken)) {
+                    flowExecutionContext.setProperty(OIDCDebugConstants.ID_TOKEN, idToken);
+                }
+                flowExecutionContext.setProperty(OIDCDebugConstants.DEBUG_INCOMING_CLAIMS, new HashMap<>(rawClaims));
+            }
+        };
+    }
 
     @Override
     protected boolean processAuthentication(HttpServletRequest request, DebugContext context,
@@ -88,17 +105,23 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
             return false;
         }
 
-        IdentityProvider idp = resolveIdentityProvider(context);
-        if (idp == null) {
-            DebugDiagnosticsUtil.recordEvent(context, OIDCDebugConstants.STAGE_TOKEN_EXCHANGE,
-                    OIDCDebugConstants.STATUS_FAILED, "Identity Provider configuration was not found.");
-            resultBuilder.buildAndCacheErrorResponse("IDP_CONFIG_MISSING",
-                    "Identity Provider configuration not found", state, context);
-            context.setProperty(OIDCDebugConstants.DEBUG_AUTH_SUCCESS, false);
-            return false;
+        String resourceId = (String) context.getProperty(OIDCDebugConstants.DEBUG_IDP_RESOURCE_ID);
+        IdentityProvider idp;
+        try {
+            idp = IdentityProviderManager.getInstance().getIdPByResourceId(resourceId,
+                    IdentityTenantUtil.resolveTenantDomain(), true);
+        } catch (IdentityProviderManagementException e) {
+            throw new DebugFrameworkServerException("OIDC_DEBUG_IDP_RESOLVE_ERROR",
+                    "Failed to resolve IdP by resourceId: " + resourceId, e.getMessage(), e);
         }
         context.setProperty(OIDCDebugConstants.IDP_CONFIG, idp);
         Map<String, String> authenticatorProperties = resolveAuthenticatorProperties(context);
+        // Credentials are scrubbed from the session store before caching; re-inject from the
+        // freshly-fetched IdP so the token exchange has access to the client secret.
+        String clientSecret = extractClientSecretFromIdP(idp);
+        if (StringUtils.isNotBlank(clientSecret)) {
+            authenticatorProperties.put(OIDCAuthenticatorConstants.CLIENT_SECRET, clientSecret);
+        }
         if (!validateRequiredTokenConfig(authenticatorProperties, state, context)) {
             return false;
         }
@@ -110,9 +133,6 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
     @SuppressWarnings("unchecked")
     protected Map<String, Object> extractClaims(DebugContext context, String state) {
 
-        // The executor returns flat local-claim → value pairs via ExecutorResponse.getUpdatedUserClaims().
-        // Raw JWT claims (including nonce) are not exposed by the executor API, so nonce validation is
-        // skipped here and only the local-claim map is available for downstream stages.
         Object resolvedLocalClaims = context.getProperty(OIDCDebugConstants.DEBUG_INCOMING_CLAIMS);
         Map<String, Object> claims = resolvedLocalClaims instanceof Map
                 ? new HashMap<>((Map<String, Object>) resolvedLocalClaims)
@@ -127,23 +147,17 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
     }
 
     @Override
-    protected void buildAndCacheDebugResult(DebugContext context, String state, Map<String, Object> claims) {
+    protected void buildAndCacheDebugResult(DebugContext context, String state, Map<String, Object> claims)
+            throws DebugFrameworkServerException {
 
-        try {
-            Map<String, Object> normalizedClaims = normalizeIncomingClaims(claims != null ? claims : new HashMap<>());
-            IdentityProvider idp = resolveIdentityProvider(context);
+        Map<String, Object> normalizedClaims = normalizeIncomingClaims(claims != null ? claims : new HashMap<>());
+        IdentityProvider idp = (IdentityProvider) context.getProperty(OIDCDebugConstants.IDP_CONFIG);
 
-            Map<String, Object> debugResult = new HashMap<>();
-            processClaimMappings(context, idp, normalizedClaims, debugResult);
-            evaluateAccountLinking(context, idp, normalizedClaims);
-            resultBuilder.buildResultMetadata(debugResult, context);
-            resultBuilder.persistDebugResult(state, context, debugResult);
-
-        } catch (RuntimeException e) {
-            LOG.error("Error building debug result: " + e.getMessage(), e);
-            context.setProperty(OIDCDebugConstants.DEBUG_AUTH_ERROR, "Error caching debug result: " + e.getMessage());
-            context.setProperty(OIDCDebugConstants.DEBUG_AUTH_SUCCESS, false);
-        }
+        Map<String, Object> debugResult = new HashMap<>();
+        processClaimMappings(context, idp, normalizedClaims, debugResult);
+        evaluateAccountLinking(context, idp, normalizedClaims);
+        resultBuilder.buildResultMetadata(debugResult, context);
+        resultBuilder.persistDebugResult(state, context, debugResult);
     }
 
     @Override
@@ -269,7 +283,9 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
             }
             String remoteClaimUri = claimMapping.getRemoteClaim().getClaimUri();
             if (StringUtils.isBlank(remoteClaimUri)) {
-                LOG.warn("Skipping claim mapping with blank remote claim URI");
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Skipping claim mapping with blank remote claim URI");
+                }
                 continue;
             }
             mappings.put(remoteClaimUri, claimMapping.getLocalClaim().getClaimUri());
@@ -341,7 +357,7 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
             Map<String, Object> incomingClaims) {
 
         if (StringUtils.isBlank(getStringClaim(incomingClaims, OIDCDebugConstants.CLAIM_EMAIL))) {
-            setAccountLinkingFailure(context, "\"email\" is missing.");
+            setAccountLinkingFailure(context, "\"email\" is missing.", OIDCDebugConstants.CLAIM_EMAIL);
         } else {
             setAccountLinkingSuccess(context);
         }
@@ -356,7 +372,9 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
                 continue;
             }
             if (StringUtils.isBlank(getStringClaim(incomingClaims, mappingConfig.getFederatedAttribute()))) {
-                setAccountLinkingFailure(context, resultBuilder.buildMissingAccountLinkingAttributeMessage(mappingConfig));
+                setAccountLinkingFailure(context,
+                        resultBuilder.buildMissingAccountLinkingAttributeMessage(mappingConfig),
+                        mappingConfig.getFederatedAttribute());
                 return;
             }
         }
@@ -367,14 +385,17 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
 
         context.setProperty(OIDCDebugConstants.CONTEXT_ACCOUNT_LINKING_STATUS, OIDCDebugConstants.STATUS_SUCCESS);
         context.setProperty(OIDCDebugConstants.CONTEXT_ACCOUNT_LINKING_MESSAGE, null);
+        context.setProperty(OIDCDebugConstants.CONTEXT_ACCOUNT_LINKING_FEDERATED_ATTRIBUTE, null);
     }
 
-    private void setAccountLinkingFailure(DebugContext context, String message) {
+    private void setAccountLinkingFailure(DebugContext context, String message, String federatedAttribute) {
 
         context.setProperty(OIDCDebugConstants.CONTEXT_ACCOUNT_LINKING_STATUS, OIDCDebugConstants.STATUS_FAILED);
         context.setProperty(OIDCDebugConstants.CONTEXT_ACCOUNT_LINKING_MESSAGE, message);
+        if (StringUtils.isNotBlank(federatedAttribute)) {
+            context.setProperty(OIDCDebugConstants.CONTEXT_ACCOUNT_LINKING_FEDERATED_ATTRIBUTE, federatedAttribute);
+        }
     }
-
 
     private boolean isAccountLinkingEnabled(IdentityProvider idp) {
 
@@ -392,7 +413,7 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
      * downstream stages (claim mapping, account linking).
      */
     private boolean retrieveTokensFromCode(HttpServletRequest request, DebugContext context, String state,
-            Map<String, String> authenticatorProperties) {
+            Map<String, String> authenticatorProperties) throws DebugFrameworkServerException {
 
         String code = request.getParameter(OIDCDebugConstants.OIDC_CODE_PARAM);
         String callbackUrl = IdentityUtil.getServerURL(FrameworkConstants.COMMONAUTH, true, true);
@@ -400,11 +421,11 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
         DebugDiagnosticsUtil.recordEvent(context, OIDCDebugConstants.STAGE_TOKEN_EXCHANGE,
                 OIDCDebugConstants.STATUS_STARTED, "Starting OIDC token exchange.");
 
-        IdentityProvider idp = resolveIdentityProvider(context);
+        IdentityProvider idp = (IdentityProvider) context.getProperty(OIDCDebugConstants.IDP_CONFIG);
         FlowExecutionContext flowContext = buildFlowExecutionContext(authenticatorProperties, code, callbackUrl,
                 state, idp);
 
-        ExecutorResponse response = EXECUTOR.execute(flowContext);
+        ExecutorResponse response = executor.execute(flowContext);
 
         if (response != null && Constants.ExecutorStatus.STATUS_COMPLETE.equals(response.getResult())) {
             Object idToken = flowContext.getProperty(OIDCDebugConstants.ID_TOKEN);
@@ -464,7 +485,8 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
         return flowContext;
     }
 
-    private boolean validateRequiredTokenConfig(Map<String, String> properties, String state, DebugContext context) {
+    private boolean validateRequiredTokenConfig(Map<String, String> properties, String state, DebugContext context)
+            throws DebugFrameworkServerException {
 
         boolean missingEndpoint = StringUtils.isBlank(properties.get(OIDCAuthenticatorConstants.OAUTH2_TOKEN_URL));
         boolean missingClientId = StringUtils.isBlank(properties.get(OIDCAuthenticatorConstants.CLIENT_ID));
@@ -496,35 +518,31 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
         return false;
     }
 
+    private String extractClientSecretFromIdP(IdentityProvider idp) {
+
+        FederatedAuthenticatorConfig[] configs = idp.getFederatedAuthenticatorConfigs();
+        if (configs == null) {
+            return null;
+        }
+        for (FederatedAuthenticatorConfig config : configs) {
+            if (config == null || !config.isEnabled()) {
+                continue;
+            }
+            for (Property prop : config.getProperties()) {
+                if (prop != null && OIDCAuthenticatorConstants.CLIENT_SECRET.equals(prop.getName())) {
+                    return prop.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, String> resolveAuthenticatorProperties(DebugContext context) {
 
         Map<String, String> properties =
                 (Map<String, String>) context.getProperty(OIDCDebugConstants.AUTHENTICATOR_PROPERTIES);
-        return properties != null ? properties : new HashMap<>();
-    }
-
-    /**
-     * Fetches the IdP from {@link IdentityProviderManager} using the resource id stashed on the debug
-     * context at session creation. {@code IDP_CONFIG} cannot be relied on across the callback because
-     * the debug context is JSON-serialized into the session store and the {@code IdentityProvider} POJO
-     * comes back as a {@code LinkedHashMap}.
-     */
-    private IdentityProvider resolveIdentityProvider(DebugContext context) {
-
-        String resourceId = (String) context.getProperty(OIDCDebugConstants.DEBUG_IDP_RESOURCE_ID);
-        if (StringUtils.isBlank(resourceId)) {
-            return null;
-        }
-        try {
-            return IdentityProviderManager.getInstance().getIdPByResourceId(resourceId,
-                    IdentityTenantUtil.resolveTenantDomain(), true);
-        } catch (IdentityProviderManagementException e) {
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("Error resolving IdP from context: " + e.getMessage(), e);
-            }
-            return null;
-        }
+        return properties != null ? new HashMap<>(properties) : new HashMap<>();
     }
 
     private String getStringClaim(Map<String, Object> claims, String claimName) {
@@ -545,5 +563,4 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
         }
         return details;
     }
-
 }

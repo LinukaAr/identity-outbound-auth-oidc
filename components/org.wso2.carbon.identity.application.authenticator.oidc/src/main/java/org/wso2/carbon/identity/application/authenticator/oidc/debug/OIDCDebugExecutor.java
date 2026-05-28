@@ -18,6 +18,8 @@
 
 package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Map;
 
 import org.apache.commons.lang.StringUtils;
@@ -27,7 +29,6 @@ import org.apache.oltu.oauth2.client.request.OAuthClientRequest;
 import org.apache.oltu.oauth2.common.exception.OAuthSystemException;
 import org.wso2.carbon.identity.application.authentication.framework.util.FrameworkConstants;
 import org.wso2.carbon.identity.application.authenticator.oidc.OIDCAuthenticatorConstants;
-import org.wso2.carbon.identity.application.authenticator.oidc.debug.util.OIDCDebugUtil;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants;
 import org.wso2.carbon.identity.debug.framework.DebugFrameworkConstants.ErrorMessages;
@@ -62,7 +63,9 @@ public class OIDCDebugExecutor extends DebugExecutor {
             String scope = (String) context.getProperty(OIDCDebugConstants.IDP_SCOPE);
             String redirectUri = IdentityUtil.getServerURL(FrameworkConstants.COMMONAUTH, true, true);
 
-            String nonce = OIDCDebugUtil.generateNonce();
+            byte[] nonceBytes = new byte[32];
+            new SecureRandom().nextBytes(nonceBytes);
+            String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(nonceBytes);
             String debugId = (String) context.getProperty(OIDCDebugConstants.DEBUG_ID);
 
             // Nonce stored here is validated against the id_token nonce claim during callback processing.
@@ -132,25 +135,18 @@ public class OIDCDebugExecutor extends DebugExecutor {
         return builder.buildQueryMessage().getLocationUri();
     }
 
-    /**
-     * Persists a sanitized copy of the context to the session store so it can be retrieved during the OIDC callback.
-     * Credentials (clientSecret) are nulled out before storage and cleared from the live context after.
-     */
     private void cacheDebugContext(DebugContext context) throws DebugExecutionException {
 
         String debugId = (String) context.getProperty(OIDCDebugConstants.DEBUG_ID);
 
         try {
-            DebugContext sanitizedContext = DebugContext.buildContextFromMap(context.getProperties());
-            sanitizedContext.setResourceType(context.getResourceType());
-            sanitizedContext.setProperty(OIDCDebugConstants.CLIENT_SECRET, null);
-            DebugSessionStore.getInstance().put(debugId, sanitizedContext);
+            DebugContext cachedContext = DebugContext.buildContextFromMap(context.getProperties());
+            cachedContext.setResourceType(context.getResourceType());
+            DebugSessionStore.getInstance().put(debugId, cachedContext);
         } catch (DebugFrameworkServerException e) {
             throw new DebugExecutionException(e.getErrorCode(), e.getMessage(),
                     "Failed to cache debug context for debugId: " + debugId, e);
         }
-
-        context.setProperty(OIDCDebugConstants.CLIENT_SECRET, null);
 
         if (LOG.isDebugEnabled()) {
             LOG.debug("Debug context cached successfully with debugId: " + debugId);

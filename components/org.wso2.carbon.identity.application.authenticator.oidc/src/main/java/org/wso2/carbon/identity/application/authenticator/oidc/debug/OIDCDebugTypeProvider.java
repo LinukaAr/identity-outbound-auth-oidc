@@ -18,6 +18,7 @@
 
 package org.wso2.carbon.identity.application.authenticator.oidc.debug;
 
+import org.wso2.carbon.identity.application.authenticator.oidc.OpenIDConnectExecutor;
 import org.wso2.carbon.identity.debug.framework.core.DebugContextProvider;
 import org.wso2.carbon.identity.debug.framework.core.DebugExecutor;
 import org.wso2.carbon.identity.debug.framework.core.DebugProcessor;
@@ -37,7 +38,12 @@ public class OIDCDebugTypeProvider implements IdpDebugTypeProvider {
 
     public OIDCDebugTypeProvider() {
 
-        this(new OIDCContextProvider(), new OIDCDebugExecutor(), new OIDCDebugProcessor());
+        this(OIDCDebugProcessor.createDefaultExecutor());
+    }
+
+    private OIDCDebugTypeProvider(OpenIDConnectExecutor oidcExecutor) {
+
+        this(new OIDCContextProvider(oidcExecutor), new OIDCDebugExecutor(), new OIDCDebugProcessor(oidcExecutor));
     }
 
     public OIDCDebugTypeProvider(DebugContextProvider contextProvider, DebugExecutor executor,

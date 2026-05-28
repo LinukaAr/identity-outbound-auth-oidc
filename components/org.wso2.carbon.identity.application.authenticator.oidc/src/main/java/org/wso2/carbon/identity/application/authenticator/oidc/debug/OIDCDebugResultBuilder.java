@@ -30,11 +30,11 @@ import org.wso2.carbon.identity.debug.framework.model.DebugContext;
 import org.wso2.carbon.identity.debug.framework.store.DebugSessionStore;
 import org.wso2.carbon.identity.debug.framework.util.DebugDiagnosticsUtil;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Builds, serializes, and persists OIDC debug results and error responses to the session store.
@@ -48,14 +48,17 @@ public class OIDCDebugResultBuilder {
     /**
      * Serializes the success result map to JSON and persists it to the session store.
      */
-    public void persistDebugResult(String state, DebugContext context, Map<String, Object> debugResult) {
+    public void persistDebugResult(String state, DebugContext context, Map<String, Object> debugResult)
+            throws DebugFrameworkServerException {
 
         String debugResultJson;
         try {
             debugResultJson = OBJECT_MAPPER.writeValueAsString(debugResult);
         } catch (JsonProcessingException e) {
-            LOG.error("Failed to serialize debug result to JSON: " + e.getMessage(), e);
-            return;
+            throw new DebugFrameworkServerException(
+                    DebugFrameworkConstants.ErrorMessages.ERROR_CODE_SERVER_ERROR.getCode(),
+                    DebugFrameworkConstants.ErrorMessages.ERROR_CODE_SERVER_ERROR.getMessage(),
+                    "Failed to serialize debug result to JSON: " + e.getMessage(), e);
         }
 
         context.setProperty(OIDCDebugConstants.DEBUG_RESULT_CACHE_KEY, debugResultJson);
@@ -73,7 +76,7 @@ public class OIDCDebugResultBuilder {
      * Snapshots current diagnostics so partial progress is visible even on early failures.
      */
     public void buildAndCacheErrorResponse(String errorCode, String errorDescription,
-            String state, DebugContext context) {
+            String state, DebugContext context) throws DebugFrameworkServerException {
 
         context.setProperty(OIDCDebugConstants.DEBUG_AUTH_SUCCESS, Boolean.FALSE);
         Map<String, Object> errorResponse = new HashMap<>();
@@ -95,8 +98,10 @@ public class OIDCDebugResultBuilder {
         try {
             errorResponseJson = OBJECT_MAPPER.writeValueAsString(errorResponse);
         } catch (JsonProcessingException e) {
-            LOG.error("Failed to serialize error response to JSON: " + e.getMessage(), e);
-            return;
+            throw new DebugFrameworkServerException(
+                    DebugFrameworkConstants.ErrorMessages.ERROR_CODE_SERVER_ERROR.getCode(),
+                    DebugFrameworkConstants.ErrorMessages.ERROR_CODE_SERVER_ERROR.getMessage(),
+                    "Failed to serialize error response to JSON: " + e.getMessage(), e);
         }
         context.setProperty(OIDCDebugConstants.DEBUG_RESULT_CACHE_KEY, errorResponseJson);
         String debugId = (String) context.getProperty(OIDCDebugConstants.DEBUG_ID);
@@ -143,14 +148,14 @@ public class OIDCDebugResultBuilder {
                     claim.get(OIDCDebugConstants.CLAIM_MAPPING_STATUS))) {
                 continue;
             }
-            Object idpClaimObj = claim.get(OIDCDebugConstants.CLAIM_MAPPING_IDP_CLAIM);
-            Object localClaimObj = claim.get(OIDCDebugConstants.CLAIM_MAPPING_LOCAL_CLAIM);
-            String idpClaim = idpClaimObj != null ? idpClaimObj.toString() : null;
-            String localClaim = localClaimObj != null ? localClaimObj.toString() : null;
+            Object idpClaim = claim.get(OIDCDebugConstants.CLAIM_MAPPING_IDP_CLAIM);
+            Object localClaim = claim.get(OIDCDebugConstants.CLAIM_MAPPING_LOCAL_CLAIM);
 
             Map<String, Object> details = new LinkedHashMap<>();
             details.put(OIDCDebugConstants.DIAG_ERROR_DESCRIPTION,
-                    buildUnmappedClaimErrorDescription(idpClaim, localClaim));
+                    buildUnmappedClaimErrorDescription(
+                            idpClaim != null ? idpClaim.toString() : null,
+                            localClaim != null ? localClaim.toString() : null));
             return details;
         }
 
@@ -181,17 +186,12 @@ public class OIDCDebugResultBuilder {
                 || StringUtils.isBlank((String) accountLinkingMessage)) {
             return details;
         }
+        details.put(OIDCDebugConstants.ACCOUNT_LINKING_REASON, accountLinkingMessage);
 
-        String message = (String) accountLinkingMessage;
-        details.put(OIDCDebugConstants.ACCOUNT_LINKING_REASON, message);
-
-        String marker = "Required Federated IdP attribute '";
-        if (message.startsWith(marker)) {
-            int start = marker.length();
-            int end = message.indexOf('\'', start);
-            if (end > start) {
-                details.put(OIDCDebugConstants.DIAG_FEDERATED_ATTRIBUTE, message.substring(start, end));
-            }
+        Object federatedAttribute =
+                context.getProperty(OIDCDebugConstants.CONTEXT_ACCOUNT_LINKING_FEDERATED_ATTRIBUTE);
+        if (federatedAttribute instanceof String && StringUtils.isNotBlank((String) federatedAttribute)) {
+            details.put(OIDCDebugConstants.DIAG_FEDERATED_ATTRIBUTE, federatedAttribute);
         }
         return details;
     }
@@ -234,11 +234,7 @@ public class OIDCDebugResultBuilder {
 
     private List<Map<String, Object>> transformDiagnostics(List<Map<String, Object>> diagnostics) {
 
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Map<String, Object> diagnostic : diagnostics) {
-            result.add(transformDiagnosticEvent(diagnostic));
-        }
-        return result;
+        return diagnostics.stream().map(this::transformDiagnosticEvent).collect(Collectors.toList());
     }
 
     /**

@@ -100,6 +100,7 @@ public final class OIDCDebugConstants {
     // Account linking keys.
     public static final String CONTEXT_ACCOUNT_LINKING_STATUS = "accountLinkingStatus";
     public static final String CONTEXT_ACCOUNT_LINKING_MESSAGE = "CONTEXT_ACCOUNT_LINKING_MESSAGE";
+    public static final String CONTEXT_ACCOUNT_LINKING_FEDERATED_ATTRIBUTE = "CONTEXT_ACCOUNT_LINKING_FEDERATED_ATTRIBUTE";
     public static final String ACCOUNT_LINKING_REASON = "reason";
     public static final String DIAG_FEDERATED_ATTRIBUTE = "federatedAttribute";
 
