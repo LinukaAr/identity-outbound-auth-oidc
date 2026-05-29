@@ -319,7 +319,6 @@ public class OIDCDebugProcessor extends IdpDebugProcessor {
                     LOG.debug("Mapped claim: " + remoteClaimUri + " -> " + localClaimUri);
                 }
             } else {
-                claimEntry.put(OIDCDebugConstants.CLAIM_MAPPING_VALUE, null);
                 claimEntry.put(OIDCDebugConstants.CLAIM_MAPPING_STATUS, OIDCDebugConstants.CLAIM_STATUS_NOT_MAPPED);
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Claim not found in incoming claims: " + remoteClaimUri);
